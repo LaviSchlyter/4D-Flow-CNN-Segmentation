@@ -139,4 +139,4 @@ wandb/
 # random
 train_full.py
 overfitting_input.npy
-overfitting_target.npy
+overfitting_labels.npy
