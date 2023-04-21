@@ -215,98 +215,6 @@ def do_eval(model,
 # Create session is the main function of the training script
 
 
-SMOOTH = 1e-6
-
-def IOU(outputs: torch.Tensor, labels: torch.Tensor):
-    # You can comment out this line if you are passing tensors of equal shape
-    # But if you are passing output from UNet or something it will most probably
-    # be with the BATCH x 1 x H x W x D shape
-    outputs = outputs.squeeze(1)  # BATCH x 1 x H x W X D=> BATCH x H x W X D
-    
-    intersection = (outputs & labels).float().sum((1, 2, 3))  # Will be zero if Truth=0 or Prediction=0
-    union = (outputs | labels).float().sum((1, 2,3))         # Will be zzero if both are 0
-    
-    iou = (intersection + SMOOTH) / (union + SMOOTH)  # We smooth our devision to avoid 0/0
-    
-    thresholded = torch.clamp(20 * (iou - 0.5), 0, 10).ceil() / 10  # This is equal to comparing with thresolds
-    
-    return thresholded.mean()  # Or thresholded.mean() if you are interested in average across the batch
-
-def train_model_debug(model: torch.nn.Module, 
-                images_tr,
-                labels_tr,
-                images_val,
-                labels_val,
-                device: torch.device,
-                optimizer: torch.optim,
-                log_dir: str,
-                config_exp):
-    print("Training model...")
-    print("Data augmentation ratio: {}".format(config_exp.da_ratio))
-    print("Loss function: {}".format(config_exp.loss_type))
-    print("Optimizer: {}".format(config_exp.optimizer_handle))
-    print("Learning rate: {}".format(config_exp.learning_rate))
-    print("Batch size: {}".format(config_exp.batch_size))
-    print("Number of steps: {}".format(config_exp.steps))
-
-    table_watch_train = wandb.Table(columns=["step", "image_number", "pred", "true"])
-    table_watch_val = wandb.Table(columns=["step", "image_number", "pred", "true"])
-
-    best_val_dice = 0
-    step = 0
-    image = images_tr[0]
-    label = labels_tr[0]
-
-    criterion = torch.nn.CrossEntropyLoss()
-    for step in tqdm(range(config_exp.steps)):
-        model.train
-
-        inputs = torch.from_numpy(image)[None]
-        # Input (batch_size, channell,x,y,z)
-        inputs.transpose_(1,4).transpose_(2,4).transpose_(3,4)
-        # Labels (batch,size, x,y,z)
-
-        inputs = inputs.to(device)
-        labels = torch.from_numpy(label)[None]
-        labels = labels.to(device)
-
-        
-        inputs_hat = model(inputs)
-        
-        #loss = loss_function(inputs_hat, labels, config_exp.nlabels, config_exp.loss_type, labels_as_1hot = True)
-        loss = criterion(inputs_hat, labels.long())
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        logging.info('step %d: training_loss = %.2f' % (step, loss))
-        wandb.log({"step": step, "training_loss":loss})
-
-
-        if step % 50 == 0:
-                labels_dice = torch.nn.functional.one_hot(labels.long(), num_classes = config_exp.nlabels)
-                labels_dice = labels_dice.transpose(1,4).transpose(2,4).transpose(3,4)
-                _, dice_, _ = losses.compute_dice(inputs_hat, labels_dice)
-                logging.info('step %d: training_dice = %.2f' % (step, dice_))
-                ### Save images every 5 epoch (400)
-                utils.make_dir_safely(log_dir + '/results/' + 'visualization/' + 'training/')
-                #utils.make_dir_safely(log_dir + '/results/' + 'visualization/' + 'validation/')
-                save_path = log_dir + '/results/' + 'visualization/' + 'training/'
-                
-                        
-                prediction = F.softmax(inputs_hat, dim=1).argmax(dim = 1)
-                np.save(save_path + f"pred_image_{step}.npy", prediction.detach().cpu().numpy())
-                np.save(save_path + f"true_image_{step}.npy", labels.cpu().numpy())
-
-            
-                
-                table_watch_train.add_data(step, step, wandb.Image(prediction[0,:,:,0].float()), wandb.Image(labels[0,:,:,0].float()))
-                table_watch_train.add_data(step, step, wandb.Image(prediction[0,:,:,5].float()), wandb.Image(labels[0,:,:,5].float()))
-                table_watch_train.add_data(step, step, wandb.Image(prediction[0,:,:,10].float()), wandb.Image(labels[0,:,:,10].float()))
-    wandb.log({"Training table": table_watch_train})
-
-
-
 def train_model(model: torch.nn.Module, 
                 images_tr,
                 labels_tr,
@@ -375,8 +283,8 @@ def train_model(model: torch.nn.Module,
             #scheduler.step()
 
         
-            if (step) % exp_config.summary_writing_frequency == 0:                    
-            #if step %20 ==0:
+            #if (step) % exp_config.summary_writing_frequency == 0:                    
+            if step %20 ==0:
                     logging.info('step %d: training_loss = %.2f' % (step, loss))
                     wandb.log({"step": step, "training_loss":loss})
             #train_loss += loss.item() # * inputs.size(0)
@@ -385,8 +293,8 @@ def train_model(model: torch.nn.Module,
             # Compute the loss on the entire training set
             # ===========================
 
-            #if (step) % exp_config.train_eval_frequency == 0:
-            if step % 200 == 0:
+            if (step) % exp_config.train_eval_frequency == 0:
+            #if step % 200 == 0:
                 logging.info('Training Data Eval:')
                 
                 train_loss, train_dice = do_eval(model,
@@ -411,8 +319,8 @@ def train_model(model: torch.nn.Module,
             # ===========================
             # Evaluate on the validation set
             # ===========================
-            #if (step) % exp_config.val_eval_frequency == 0:
-            if step % 200 == 0:
+            if (step) % exp_config.val_eval_frequency == 0:
+            #if step % 200 == 0:
                 logging.info('Validation Data Eval:')
                 utils.make_dir_safely(log_dir + '/results/')
                 
@@ -565,166 +473,10 @@ def main():
         wandb.config.update({"experiment_name": exp_config.experiment_name, "data_augmentation": exp_config.da_ratio, "batch_size": exp_config.batch_size, "learning_rate": exp_config.learning_rate, "optimizer": exp_config.optimizer_handle, "model": exp_config.model_handle, "nchannels": exp_config.nchannels, "nlabels": exp_config.nlabels,
                              "epochs": exp_config.epochs, "loss": exp_config.loss_type, "z_cut":exp_config.cut_z })
         
-        #"---------------------------------- DEBUGGING -------------------------------------"
-        #logging.info('------------------------------------Debugging with smaller set--------------------------')
-        #np.random.seed(0)
-        #n_patients = 1  
-        ##indexes_tr = np.sort(np.random.default_rng().choice(len(images_tr), size = n_patients *(32 - 2*exp_config.cut_z), replace = False))
-        ##images_tr =images_tr[indexes_tr] 
-        #images_tr = images_tr[np.arange(32 - 2*exp_config.cut_z)]
-#
-        ##labels_tr = labels_tr[indexes_tr]
-        #labels_tr = labels_tr[np.arange(32 - 2*exp_config.cut_z)]
-        #np.random.seed(0)
-        #n_patients_val = 2
-        #indexes_vl = np.sort(np.random.default_rng().choice(len(images_vl), size = n_patients_val *(32 - 2*exp_config.cut_z), replace = False))
-        #images_vl = images_vl[indexes_vl]
-        #np.random.seed(0)
-        #labels_vl = labels_vl[indexes_vl]
-        #logging.info('Shape of validation images: %s' %str(images_vl.shape))
-        #logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-        ## Print summary of model
+        
         print(summary(exp_config.model_handle(exp_config.nchannels, exp_config.nlabels).to(device), torch.zeros(size = (exp_config.batch_size,exp_config.nchannels, 144,112,48) ).to(device)))
         train_model(model, images_tr, labels_tr, images_vl, labels_vl, device, optimizer, log_dir, exp_config)
 
-
-
-def main_debug():
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print("Using device: {}".format(device))
-
-    # Load the data
-    logging.info('============================================================')
-    logging.info('Loading training data from: ' + sys_config.project_data_root)    
-    data_tr = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_root,
-                                                    idx_start = 0,
-                                                    idx_end = 19,
-                                                    train_test='train')
-    images_tr = data_tr['images_train']
-    labels_tr = data_tr['labels_train']
-        
-    logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-    logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-
-    logging.info('============================================================')
-    logging.info('Loading validation data from: ' + sys_config.project_data_root)        
-    data_vl = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_root,
-                                                    idx_start = 20,
-                                                    idx_end = 24,
-                                                    train_test='validation')
-    images_vl = data_vl['images_validation']
-    labels_vl = data_vl['labels_validation']        
-        
-    logging.info('Shape of validation images: %s' %str(images_vl.shape))
-    logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-    logging.info('============================================================')
-    
-    if exp_config.nchannels == 1:
-        logging.info('============================================================')
-        logging.info('Only the first phase images (channel 1) will be used for the segmentation...')
-        logging.info('============================================================')
-        # Create the experiment directory
-    log_dir = os.path.join(sys_config.log_root, exp_config.experiment_name)
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-
-    # Create the model
-    model = exp_config.model_handle(in_channels=exp_config.nchannels, out_channels=exp_config.nlabels)
-    model.to(device)
-
-    # Create the optimizer
-    optimizer = exp_config.optimizer_handle(model.parameters(), lr=exp_config.learning_rate)
-
-    np.random.seed(0)
-    n_patients = 1  
-    indexes_tr = np.sort(np.random.default_rng().choice(len(images_tr), size =1, replace = False))
-    images_tr_debug =images_tr[indexes_tr] 
-    labels_tr_debug = labels_tr[indexes_tr]
-    # Repeat the same image several times 
-    images_tr_debug = np.repeat(images_tr_debug, 32, axis =0)
-    labels_tr_debug = np.repeat(labels_tr_debug, 32, axis =0)
-    images_tr_debug_time = images_tr_debug[:,:,:,7,:] 
-    labels_tr_debug_time = labels_tr_debug[:,:,:,7]
-    images_tr_debug = np.repeat(images_tr_debug_time[:,:,:,np.newaxis,:], 48, axis =3)
-    labels_tr_debug = np.repeat(labels_tr_debug_time[:,:,:,np.newaxis], 48, axis =3)
-
-    np.random.seed(0)
-    n_patients_val = 1
-    indexes_vl = np.sort(np.random.default_rng().choice(len(images_vl), size = n_patients_val *32, replace = False))
-    images_vl_debug = images_vl[indexes_vl]
-    np.random.seed(0)
-    labels_vl_debug = labels_vl[indexes_vl]
-    
-
-    logging.info('Shape of training images: %s' %str(images_tr_debug.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-    logging.info('Shape of training labels: %s' %str(labels_tr_debug.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-    logging.info('Shape of validation images: %s' %str(images_vl_debug.shape))
-    logging.info('Shape of validation labels: %s' %str(labels_vl_debug.shape))
-    criterion = torch.nn.CrossEntropyLoss()
-    for e in tqdm(range(400)):
-        train_loss = 0
-        n_batches = 0
-        for batch in iterate_minibatches(images_tr_debug, labels_tr_debug, batch_size= 8, cut_t_slices=False, n_cut_slices=5):
-            model.train()
-            x, y = batch
-
-            # From numpy.ndarray to tensors
-
-            # Input (batch_size, x,y,t,channel_number)
-            x = torch.from_numpy(x)
-            # Input (batch_size, channell,x,y,t)
-            x.transpose_(1,4).transpose_(2,4).transpose_(3,4)
-            # Labels (batch,size, x,y,t)
-
-            x = x.to(device)
-            y = torch.from_numpy(y).to(device)
-            
-            optimizer.zero_grad()
-            
-            x_logits = model(x)
-            loss = criterion(x_logits, y.long())
-            train_loss += loss.item()
-            #one_hot_labels= torch.nn.functional.one_hot(y.to(torch.int64), num_classes = 2).transpose(1,4).transpose(2,4).transpose(3,4)
-            #_, dice_train, _ =losses.compute_dice(x_logits, one_hot_labels)
-            #print("dice_mean training", dice_train.item())
-            loss.backward()
-            optimizer.step()
-            n_batches +=1
-        print("train_loss_divided by number of batches", train_loss/n_batches, "train_loss summed", train_loss)
-        
-        if e % 20 == 0:
-            np.save(f"/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/testing_batches/cut_channel_1_debug_01/images_{e}.npy", x.cpu().numpy())
-            
-            np.save(f"/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/testing_batches/cut_channel_1_debug_01/prediction_{e}.npy", x_logits.detach().cpu().numpy())
-            np.save(f"/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/testing_batches/cut_channel_1_debug_01/labels_{e}.npy", y.cpu().numpy())
-
-            """
-            val_loss = 0
-            n_batches = 0
-            for batch in iterate_minibatches(images_vl_debug, labels_vl_debug, batch_size= 8):
-                model.eval()
-                x, y = batch
-
-                # From numpy.ndarray to tensors
-
-                # Input (batch_size, x,y,t,channel_number)
-                x = torch.from_numpy(x)
-                # Input (batch_size, channell,x,y,t)
-                x.transpose_(1,4).transpose_(2,4).transpose_(3,4)
-                # Labels (batch,size, x,y,t)
-
-                x = x.to(device)
-                y = torch.from_numpy(y).to(device)
-                
-                x_logits = model(x)
-                one_hot_labels = torch.nn.functional.one_hot(y.to(torch.int64), num_classes = 2).transpose(1,4).transpose(2,4).transpose(3,4)
-                _, dice_val, _ =losses.compute_dice(x_logits, one_hot_labels)
-                print("dice_mean validation", dice_val.item())
-                loss = criterion(x_logits, y.long())
-                val_loss += loss.item()
-                n_batches +=1
-            print("val_loss_divided by number of batches", val_loss/n_batches, "val loss summed", val_loss)
-            """
 
 
 
