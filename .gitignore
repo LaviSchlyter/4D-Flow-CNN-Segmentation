@@ -127,3 +127,16 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Logs + directories
+
+logdir/
+logs/
+old_log_dir/
+testing_batches/
+wandb/
+
+# random
+train_full.py
+overfitting_input.npy
+overfitting_target.npy
