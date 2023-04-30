@@ -35,14 +35,6 @@ class UNet(nn.Module):
         self.conv4 = ConvBlock(4*n0, 8*n0)
         self.pool4 = nn.MaxPool3d(kernel_size=(2,2,2), stride=(2,2,2))
         self.conv5 = ConvBlock(8*n0, 16*n0)
-        
-        # upsampling bilinear or interpolate 
-        
-        #self.upconv1 = nn.ConvTranspose3d(16*n0, 8*n0, kernel_size=2, stride=2)
-        #self.upconv2 = nn.ConvTranspose3d(8*n0, 4*n0, kernel_size=2, stride=2)
-        #self.upconv3 = nn.ConvTranspose3d(4*n0, 2*n0, kernel_size=2, stride=2)
-        #self.upconv4 = nn.ConvTranspose3d(2*n0, n0, kernel_size=2, stride=2)
-        #self.conv6 = nn.Conv3d(n0, out_channels, kernel_size=3, padding=1)
 
         self.upconv1 = ConvBlock(24*n0, 8*n0)
         self.upconv2 = ConvBlock(12*n0, 4*n0)
@@ -60,29 +52,19 @@ class UNet(nn.Module):
         conv4_out = self.conv4(pool3_out)
         pool4_out = self.pool4(conv4_out)
         conv5_out = self.conv5(pool4_out)
-        # Correct sizes
-        # output [batch, 128, 9,7,3]
-        upsample1 = F.interpolate(conv5_out, scale_factor=(2,2,2), mode='trilinear')
-        # output [batch. 128, 18, 14,3]
-        #upconv1_out = self.upconv1(conv5_out)
+        
+        upsample1 = F.interpolate(conv5_out, scale_factor=(2,2,2), mode='nearest')
         concat1_out = torch.cat([conv4_out, upsample1], dim=1)
         upconv1 = self.upconv1(concat1_out)
-        #print("Size after first upsampling block", upconv1.shape)
-        #upsample2 = F.interpolate(upconv1, scale_factor=(2,2,2), mode='trilinear')
-        upsample2 = F.interpolate(upconv1, size=conv3_out.shape[2:], mode='trilinear')
+        upsample2 = F.interpolate(upconv1, size=conv3_out.shape[2:], mode='nearest')
         concat2_out = torch.cat([conv3_out, upsample2], dim=1)
         upconv2 = self.upconv2(concat2_out)
-        #print("Size after second upsampling block", upconv2.shape)
-        upsample3 = F.interpolate(upconv2, size=conv2_out.shape[2:], mode='trilinear')
-        #upsample3 = F.interpolate(upconv2, scale_factor=(2,2,2), mode='trilinear')
+        upsample3 = F.interpolate(upconv2, size=conv2_out.shape[2:], mode='nearest')
         concat3_out = torch.cat([conv2_out, upsample3], dim=1)
         upconv3 = self.upconv3(concat3_out)
-        #print("Size after third upsampling block", upconv3.shape)
-        upsample4 = F.interpolate(upconv3, size=conv1_out.shape[2:], mode='trilinear')
-        #upsample4 = F.interpolate(upconv3, scale_factor=(2,2,2), mode='trilinear')
+        upsample4 = F.interpolate(upconv3, size=conv1_out.shape[2:], mode='nearest')
         concat4_out = torch.cat([conv1_out, upsample4], dim=1)
         upconv4 = self.upconv4(concat4_out)
-        #print("Size after fourth and final upsampling block", upconv4.shape)
         conv6_out = self.conv6(upconv4)
 
         #print("Size of output before softmax", conv6_out.shape)

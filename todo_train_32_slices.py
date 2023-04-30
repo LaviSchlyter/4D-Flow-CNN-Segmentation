@@ -214,7 +214,22 @@ def do_eval(model,
 
 # Create session is the main function of the training script
 
+SMOOTH = 1e-6
 
+def IOU(outputs: torch.Tensor, labels: torch.Tensor):
+    # You can comment out this line if you are passing tensors of equal shape
+    # But if you are passing output from UNet or something it will most probably
+    # be with the BATCH x 1 x H x W x D shape
+    outputs = outputs.squeeze(1)  # BATCH x 1 x H x W X D=> BATCH x H x W X D
+    
+    intersection = (outputs & labels).float().sum((1, 2, 3))  # Will be zero if Truth=0 or Prediction=0
+    union = (outputs | labels).float().sum((1, 2,3))         # Will be zzero if both are 0
+    
+    iou = (intersection + SMOOTH) / (union + SMOOTH)  # We smooth our devision to avoid 0/0
+    
+    thresholded = torch.clamp(20 * (iou - 0.5), 0, 10).ceil() / 10  # This is equal to comparing with thresolds
+    
+    return thresholded.mean()  # Or thresholded.mean() if you are interested in average across the batch
 
 
 
@@ -242,7 +257,7 @@ def train_model(model: torch.nn.Module,
     table_watch_val = wandb.Table(columns=["epoch", "image_number", "pred", "true", "input"])
     best_val_dice = 0
     #scheduler = CyclicLR(optimizer, base_lr = 5e-4 , max_lr = 1.5e-3, step_size_up=88, cycle_momentum=False )
-    #scheduler = ExponentialLR(optimizer, gamma=0.1)
+    scheduler = ExponentialLR(optimizer, gamma=0.1)
 
     if config_exp.loss_type == "dice":
         label_hot_bool = False
@@ -283,8 +298,8 @@ def train_model(model: torch.nn.Module,
             
             loss.backward()
             optimizer.step()
-            #wandb.log({ "lr": scheduler.get_last_lr()[0]})
-            #scheduler.step()
+            wandb.log({ "lr": scheduler.get_last_lr()[0]})
+            scheduler.step()
 
         
             #if (step) % exp_config.summary_writing_frequency == 0:                    
@@ -399,13 +414,13 @@ def save_results_visualization(model, config_exp, images_set, labels_set, device
                 table_watch.add_data(epoch, n, wandb.Image(prediction[0,:,:,20].float()), wandb.Image(labels[0,:,:,20].float()), wandb.Image(inputs[0,0,:,:,20].float()))
                 
 
-def cut_z_slices(images, labels):
+def cut_z_slices(images, labels, n_cut):
     n_data = images.shape[0]
     index = np.arange(n_data)
-    # We know we have 32 slices (only valid for Freuburg data)
+    # We know we have 32 slices
     # First dim is the number of patients
     index_shaped = index.reshape(-1, 32)
-    index_keep = index_shaped[:, 3:-3].flatten()
+    index_keep = index_shaped[:, n_cut:-n_cut].flatten()
     return images[index_keep], labels[index_keep]
 
 
@@ -413,7 +428,7 @@ def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Using device: {}".format(device))
     wandb_mode = "online" # online/ disabled
-    with wandb.init(mode= wandb_mode,project="segmentation", name = exp_config.experiment_name, notes = "segmentation", tags =["finetune_32_debug"]):
+    with wandb.init(mode= wandb_mode,project="segmentation", name = exp_config.experiment_name, notes = "segmentation", tags =["Freiburg", "finetune_w_bern","32_slices", "use_saved_model"]):
 
         # Create the model
         model = exp_config.model_handle(in_channels=exp_config.nchannels, out_channels=exp_config.nlabels)
@@ -447,23 +462,6 @@ def main():
             logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
             logging.info('============================================================')
 
-            """
-            if exp_config.cut_z:
-                # Values are either 0 or 3 and this function works for the Freiburg dataset
-                # We remove parts of the images in the z direction
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                images_tr, labels_tr = cut_z_slices(images_tr, labels_tr)
-                images_vl, labels_vl = cut_z_slices(images_vl, labels_vl)
-                logging.info('============================================================')
-                logging.info('Dimensions after cutting...')
-                logging.info('============================================================')
-                logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-                logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-                logging.info('Shape of validation images: %s' %str(images_vl.shape))
-                logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-            """
         # Load the saved models if that's what we use
         if exp_config.use_saved_model:
             logging.info('============================================================')
@@ -489,85 +487,28 @@ def main():
             
             print("Loading Bern data... ")
             basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
-            #data_tr = h5py.File(basepath + '/bern_images_and_labels_from_101_to_104.hdf5','r')
-            #data_vl = h5py.File(basepath + '/bern_images_and_labels_from_105_to_106.hdf5','r')
-            #images_tr = data_tr['images_train'][:]
-            #labels_tr = data_tr['labels_train'][:]
-            #images_vl = data_vl['images_validation'][:]
-            #labels_vl = data_vl['labels_validation'][:]     
             data_tr = h5py.File(basepath + '/size_32_bern_images_and_labels_from_101_to_104.hdf5','r')
             data_vl = h5py.File(basepath + '/size_32_bern_images_and_labels_from_105_to_106.hdf5','r')
             images_tr = data_tr['images_train']
             labels_tr = data_tr['labels_train']
             images_vl = data_vl['images_validation']
-            labels_vl = data_vl['labels_validation']
+            labels_vl = data_vl['labels_validation']     
             logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
             logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
             logging.info('Shape of validation images: %s' %str(images_vl.shape))
-            logging.info('Shape of validation labels: %s' %str(labels_vl.shape)) 
-            
+            logging.info('Shape of validation labels: %s' %str(labels_vl.shape))   
 
-            """
-            if exp_config.cut_z:
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                keep_indices_tr = np.where(data_tr['alias'][:] ==0)[0]
-                keep_indices_vl = np.where(data_vl['alias'][:] ==0)[0]
-                images_tr = images_tr[keep_indices_tr]
-                labels_tr = labels_tr[keep_indices_tr]
-                images_vl = images_vl[keep_indices_vl]
-                labels_vl = labels_vl[keep_indices_vl]
-                logging.info('============================================================')
-                logging.info('Dimensions after cutting...')
-                logging.info('============================================================')
-                logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-                logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-                logging.info('Shape of validation images: %s' %str(images_vl.shape))
-                logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-            """ 
-              
-
-        
+        # Ugly but temporary
         # Here we train with Bern data and Freiburg data
         if ((exp_config.train_with_bern) and (not exp_config.use_saved_model)):
             print("Loading Bern data... and appending to the Freiburg data...")
             basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
-            #bern_tr = h5py.File(basepath + '/bern_images_and_labels_from_101_to_104.hdf5','r')
-            #bern_vl = h5py.File(basepath + '/bern_images_and_labels_from_105_to_106.hdf5','r')
-            #bern_images_tr = bern_tr['images_train'][:]
-            #bern_labels_tr = bern_tr['labels_train'][:]
-            #bern_images_vl = bern_vl['images_validation'][:]
-            #bern_labels_vl = bern_vl['labels_validation'][:]     
             bern_tr = h5py.File(basepath + '/size_32_bern_images_and_labels_from_101_to_104.hdf5','r')
             bern_vl = h5py.File(basepath + '/size_32_bern_images_and_labels_from_105_to_106.hdf5','r')
             bern_images_tr = bern_tr['images_train']
             bern_labels_tr = bern_tr['labels_train']
             bern_images_vl = bern_vl['images_validation']
-            bern_labels_vl = bern_vl['labels_validation']     
-            logging.info('Shape of Bern training images: %s' %str(bern_images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-            logging.info('Shape of Bern training labels: %s' %str(bern_labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-            logging.info('Shape of Bern validation images: %s' %str(bern_images_vl.shape))
-            logging.info('Shape of Bern validation labels: %s' %str(bern_labels_vl.shape))
-            """
-            if exp_config.cut_z:
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                keep_indices_tr = np.where(bern_tr['alias'][:] ==0)[0]
-                keep_indices_vl = np.where(bern_vl['alias'][:] ==0)[0]
-                bern_images_tr = bern_images_tr[keep_indices_tr]
-                bern_labels_tr = bern_labels_tr[keep_indices_tr]
-                bern_images_vl = bern_images_vl[keep_indices_vl]
-                bern_labels_vl = bern_labels_vl[keep_indices_vl]   
-                logging.info('============================================================')
-                logging.info('Dimensions after cutting...')
-                logging.info('============================================================')
-                logging.info('Shape of Bern training images: %s' %str(bern_images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-                logging.info('Shape of Bern training labels: %s' %str(bern_labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-                logging.info('Shape of Bern validation images: %s' %str(bern_images_vl.shape))
-                logging.info('Shape of Bern validation labels: %s' %str(bern_labels_vl.shape))
-            """
+            bern_labels_vl = bern_vl['labels_validation']        
             images_tr = np.concatenate([images_tr[:],bern_images_tr[:]], axis=0)
             labels_tr = np.concatenate([labels_tr[:],bern_labels_tr[:]], axis=0)
             images_vl = np.concatenate([images_vl[:],bern_images_vl[:]], axis=0)
@@ -583,33 +524,12 @@ def main():
             print("Loading Bern data... ")
             print("Finetuning the model with Bern data...")
             basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
-            #data_tr = h5py.File(basepath + '/bern_images_and_labels_from_101_to_104.hdf5','r')
-            #data_vl = h5py.File(basepath + '/bern_images_and_labels_from_105_to_106.hdf5','r')
-            #images_tr = data_tr['images_train'][:]
-            #labels_tr = data_tr['labels_train'][:]
-            #images_vl = data_vl['images_validation'][:]
-            #labels_vl = data_vl['labels_validation'][:]
             data_tr = h5py.File(basepath + '/size_32_bern_images_and_labels_from_101_to_104.hdf5','r')
             data_vl = h5py.File(basepath + '/size_32_bern_images_and_labels_from_105_to_106.hdf5','r')
             images_tr = data_tr['images_train']
             labels_tr = data_tr['labels_train']
             images_vl = data_vl['images_validation']
             labels_vl = data_vl['labels_validation']
-            """
-            if exp_config.cut_z:
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                keep_indices_tr = np.where(data_tr['alias'][:] ==0)[0]
-                keep_indices_vl = np.where(data_vl['alias'][:] ==0)[0]
-                images_tr = images_tr[keep_indices_tr]
-                labels_tr = labels_tr[keep_indices_tr]
-                images_vl = images_vl[keep_indices_vl]
-                labels_vl = labels_vl[keep_indices_vl]
-            logging.info('============================================================')
-            logging.info('Shapes after cutting...')
-            logging.info('============================================================')
-            """
             logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
             logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
             logging.info('Shape of validation images: %s' %str(images_vl.shape))
@@ -620,21 +540,21 @@ def main():
             logging.info('Only the phase x images (channel 1) will be used for the segmentation...')
             logging.info('============================================================')
 
-        
-        if exp_config.cut_z:
-                # We remove parts of the images in the z direction
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                images_tr, labels_tr = cut_z_slices(images_tr, labels_tr)
-                images_vl, labels_vl = cut_z_slices(images_vl, labels_vl)
-                logging.info('============================================================')
-                logging.info('Dimensions after cutting...')
-                logging.info('============================================================')
-                logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-                logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-                logging.info('Shape of validation images: %s' %str(images_vl.shape))
-                logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
+        if exp_config.cut_z != 0:
+            # We remove parts of the images in the z direction
+            logging.info('============================================================')
+            logging.info('Cutting the images in the z direction...')
+            logging.info('============================================================')
+            images_tr, labels_tr = cut_z_slices(images_tr, labels_tr, n_cut = exp_config.cut_z)
+            images_vl, labels_vl = cut_z_slices(images_vl, labels_vl, n_cut = exp_config.cut_z)
+            logging.info('============================================================')
+            logging.info('Dimensions after cutting...')
+            logging.info('============================================================')
+            logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
+            logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
+            logging.info('Shape of validation images: %s' %str(images_vl.shape))
+            logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
+
 
 
         # Create the experiment directory
@@ -651,7 +571,7 @@ def main():
 
         
         wandb.config.update({"experiment_name": exp_config.experiment_name, "data_augmentation": exp_config.da_ratio, "batch_size": exp_config.batch_size, "learning_rate": exp_config.learning_rate, "optimizer": exp_config.optimizer_handle, "betas_if_adamW":exp_config.betas, "model": exp_config.model_handle, "nchannels": exp_config.nchannels, "nlabels": exp_config.nlabels,
-                             "epochs": exp_config.epochs, "loss": exp_config.loss_type, "z_cut":exp_config.cut_z, "use_bern_data":exp_config.train_with_bern, "defrozen_conv_blocks": exp_config.defrozen_conv_blocks, "adaptive_batch_norm": exp_config.use_adaptive_batch_norm})
+                             "epochs": exp_config.epochs, "loss": exp_config.loss_type, "z_cut":exp_config.cut_z, "use_bern_data":exp_config.train_with_bern, "defrozen_conv_blocks": exp_config.defrozen_conv_blocks})
 
         
         #"---------------------------------- DEBUGGING -------------------------------------"

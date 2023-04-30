@@ -10,12 +10,19 @@ import torch
 # Model settings
 # ======================================================================
 model_handle = model_zoo.UNet
-cut_z = 0
-run_number = f"_DEBUG_training_LOSS_phase_cross_cut_z_{cut_z}"
+train_with_bern = True
+defrozen_conv_blocks = False
+use_adaptive_batch_norm = False
+# If cut_z is True, we cut the first and last 3 slices of the z axis
+cut_z = True
+cut_z_saved = 3
+run_number = 1
 da_ratio = 0.0
 nchannels = 4 # [intensity, vx, vy, vz]
-experiment_name = 'unet3d_da_' + str(da_ratio) + 'nchannels' + str(nchannels) + '_r' + str(run_number)
-
+#note = f'_bern_{train_with_bern}_adaptive_{use_adaptive_batch_norm}_DEBUG'
+note = f'_full_run'
+extra_info = "_bern_32_slices_fine_tuning_lr_1e-3"
+use_saved_model = True
 # ======================================================================
 # data settings
 # ======================================================================
@@ -28,11 +35,12 @@ nlabels = 2 # [background, foreground]
 # ======================================================================
 #max_steps = 10000
 #steps = 1000
-epochs = 11
+epochs = 75
 batch_size = 8
 learning_rate = 1e-3
 optimizer_handle = torch.optim.Adam
-loss_type = 'crossentropy'  # crossentropy/dice
+betas = (0.9, 0.98)
+loss_type = 'dice'  # crossentropy/dice
 summary_writing_frequency = 20 # 4 times in each epoch (if n_tr_images=20, batch_size=8)
 train_eval_frequency = 500 # every 4 epochs (if n_tr_images=20, batch_size=8)
 val_eval_frequency = 500 # every 4 epochs (if n_tr_images=20, batch_size=8)
@@ -41,6 +49,9 @@ save_frequency = 1000 # every 10 epochs (if n_tr_images=20, batch_size=8)
 continue_run = False
 debug = True
 augment_data = False
+experiment_name_saved_model = 'unet3d_da_' + str(da_ratio) + 'nchannels' + str(nchannels) + '_r' + str(run_number) + '_loss_' + loss_type + '_cut_z_' + str(cut_z_saved) + note 
+experiment_name = 'unet3d_da_' + str(da_ratio) + 'nchannels' + str(nchannels) + '_r' + str(run_number) + '_loss_' + loss_type + '_cut_z_' + str(cut_z) + note + extra_info
+
 
 # ======================================================================
 # test settings
