@@ -136,6 +136,8 @@ old_log_dir/
 testing_batches/
 wandb/
 
+*.npy
+
 # random
 train_full.py
 overfitting_input.npy

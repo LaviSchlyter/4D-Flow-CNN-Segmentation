@@ -41,24 +41,41 @@ def compute_dice(logits, labels, epsilon=1e-10):
 
 ## ======================================================================
 ## ======================================================================
-def dice_loss(logits, labels):
+def dice_loss(logits, labels, weights=None):
     # logits = [8,2,144,112,48]
     # labels = [8,2,144,112,48]
     
 
-    _, mean_dice, mean_fg_dice = compute_dice(logits, labels)
+    dice, mean_dice, mean_fg_dice = compute_dice(logits, labels)
 
-    loss = 1 - mean_dice
+    if weights is None:
+        loss = 1 - mean_dice
+        #loss = 1 - mean_fg_dice
+    else:
+        loss = 1 - dice
+        #torch.mean(dice.cpu()*torch.from_numpy(weights).unsqueeze(1))
+        #loss = torch.sum(torch.mean(loss, dim = 1)* weights)
+        #loss = torch.mean(torch.mean(loss, dim = 1)* weights)
+        # For Bern 0.021 have labels the rest doesn't as opposed to Freiburg with 0.033
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        weights = torch.Tensor([1, 47.6]).to(device)
+        loss = torch.sum(torch.mean(loss * weights, dim = 0))
+
 
     return loss
 
 ## ======================================================================
 ## ======================================================================
-def pixel_wise_cross_entropy_loss(logits, labels):
+def pixel_wise_cross_entropy_loss(logits, labels, weights=None):
     
-    # Compute the cross-entropy loss
-    Loss = torch.nn.CrossEntropyLoss()
-    loss = Loss(logits, labels.long())
+    if weights is None:
+    
+        # Compute the cross-entropy loss
+        Loss = torch.nn.CrossEntropyLoss()
+        loss = Loss(logits, labels.long())
+    else:
+        Loss = torch.nn.CrossEntropyLoss(reduction='none')
+        loss = torch.mean(Loss(logits, labels.long())*weights, dim = 0)
 
     #loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=labels))
     

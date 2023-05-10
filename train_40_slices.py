@@ -415,22 +415,14 @@ def save_results_visualization(model, config_exp, images_set, labels_set, device
                 table_watch.add_data(epoch, n, wandb.Image(prediction[0,:,:,20].float()), wandb.Image(labels[0,:,:,20].float()), wandb.Image(inputs[0,0,:,:,20].float()))
                 
 
-def cut_z_slices(images, labels, freiburg = False):
-    if freiburg:
-        n_data = images.shape[0]
-        index = np.arange(n_data)
-        # We know we have 32 slices (only valid for Freuburg data)
-        # First dim is the number of patients
-        index_shaped = index.reshape(-1, 32)
-        index_keep = index_shaped[:, 3:-3].flatten()
-        return images[index_keep], labels[index_keep]
-    else:
-        # We know we have 40 slices (only valid for Bern data)
-        n_data = images.shape[0]
-        index = np.arange(n_data)
-        index_shaped = index.reshape(-1, 40)
-        index_keep = index_shaped[:, 3:-3].flatten()
-        return images[index_keep], labels[index_keep]
+def cut_z_slices(images, labels):
+    n_data = images.shape[0]
+    index = np.arange(n_data)
+    # We know we have 32 slices (only valid for Freuburg data)
+    # First dim is the number of patients
+    index_shaped = index.reshape(-1, 32)
+    index_keep = index_shaped[:, 3:-3].flatten()
+    return images[index_keep], labels[index_keep]
 
 
 def main():
@@ -478,8 +470,8 @@ def main():
                 logging.info('============================================================')
                 logging.info('Cutting the images in the z direction...')
                 logging.info('============================================================')
-                images_tr, labels_tr = cut_z_slices(images_tr, labels_tr, freiburg = True)
-                images_vl, labels_vl = cut_z_slices(images_vl, labels_vl, freiburg = True)
+                images_tr, labels_tr = cut_z_slices(images_tr, labels_tr)
+                images_vl, labels_vl = cut_z_slices(images_vl, labels_vl)
                 logging.info('============================================================')
                 logging.info('Dimensions after cutting...')
                 logging.info('============================================================')

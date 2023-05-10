@@ -6,6 +6,7 @@ from scipy.ndimage import morphology
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt 
+import torch
     
 # ===================================================
 # ===================================================
@@ -69,6 +70,109 @@ def normalize_image(image):
     normalized_image[...,3] = velocity_image_denoised[...,2] / vpercentile  
   
     return normalized_image
+
+
+# ==================================================================    
+# ==================================================================    
+def make_dir_safely(dirname):
+    # directory = os.path.dirname(dirname)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+
+
+
+def crop_or_pad_Bern_all_slices(data, new_shape):
+    #processed_data = np.zeros(new_shape)
+    
+    # axis 0 is the x-axis and we crop from top since aorta is at the bottom
+    # axis 1 is the y-axis and we pad 
+    # The axis two we leave since it'll just be the batch dimension
+    delta_axis0 = data.shape[0] - new_shape[0]
+    delta_axis1 = data.shape[1] - new_shape[1]
+    if len(new_shape) == 5: # Image (x,y,None, t,c) - the z will be batch and will vary doesn't need to be equal
+        processed_data = np.zeros((new_shape[0], new_shape[1], data.shape[2], new_shape[3], new_shape[4]))
+        if delta_axis1 <= 0:
+        # The x is always cropped, y padded
+            processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,...]
+        else:
+            # x croped and y cropped equally either way
+            processed_data[:, :,:,:data.shape[3],... ] = data[delta_axis0:, (delta_axis1//2):-(delta_axis1//2),...]
+
+
+    if len(new_shape) == 4: # Label
+        processed_data = np.zeros((new_shape[0], new_shape[1], data.shape[2], new_shape[3]))
+        # The x is always cropped, y always padded
+        processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,...]
+    return processed_data
+
+
+
+def crop_or_pad_Bern_slices(data, new_shape):
+    processed_data = np.zeros(new_shape)
+    # axis 0 is the x-axis and we crop from top since aorta is at the bottom
+    # axis 1 is the y-axis and we pad
+    # axis 2 is the z-axis and we crop from the right (end of the image) since aorta is at the left
+    delta_axis0 = data.shape[0] - new_shape[0]
+    if len(new_shape) == 5: # Image
+        # The x is always cropped, y always padded, z_cropped
+        processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,:, :new_shape[2],...]
+
+    if len(new_shape) == 4: # Label
+        # The x is always cropped, y always padded, z_cropped
+        processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,:, :new_shape[2],...]
+    return processed_data
+
+
+
+# Predict the segmentation using model
+def predict(model: torch.nn.Module, image: torch.Tensor):
+    model.eval()
+    with torch.no_grad():
+        logits = model(image)
+        probs = torch.nn.functional.softmax(logits, dim=1)
+        prediction = probs.argmax(dim=1)
+        return logits, probs, prediction
+
+
+
+
+# ==========================================================
+# ==========================================================
+# NOT USED  BELOW
+# ==========================================================
+# ==========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # ==========================================================
 # ==========================================================       
@@ -330,9 +434,14 @@ def crop_or_pad_4dvol_along_3(vol, n):
         vol_cropped[:, :, :, x_c:x_c + x, :] = vol
     return vol_cropped
 
+# ==================================================================
+# crop or pad functions to change image size without changing resolution
 # ==================================================================    
-# ==================================================================    
-def make_dir_safely(dirname):
-    # directory = os.path.dirname(dirname)
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
+def crop_or_pad_4dvol(vol, target_size):
+    
+    vol = crop_or_pad_4dvol_along_0(vol, target_size[0])
+    vol = crop_or_pad_4dvol_along_1(vol, target_size[1])
+    vol = crop_or_pad_4dvol_along_2(vol, target_size[2])
+    vol = crop_or_pad_4dvol_along_3(vol, target_size[3])
+                
+    return vol

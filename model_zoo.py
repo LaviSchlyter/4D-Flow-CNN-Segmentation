@@ -53,7 +53,7 @@ class UNet(nn.Module):
         pool4_out = self.pool4(conv4_out)
         conv5_out = self.conv5(pool4_out)
         
-        upsample1 = F.interpolate(conv5_out, scale_factor=(2,2,2), mode='nearest')
+        upsample1 = F.interpolate(conv5_out, size=conv4_out.shape[2:], mode='nearest')
         concat1_out = torch.cat([conv4_out, upsample1], dim=1)
         upconv1 = self.upconv1(concat1_out)
         upsample2 = F.interpolate(upconv1, size=conv3_out.shape[2:], mode='nearest')
