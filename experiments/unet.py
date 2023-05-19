@@ -10,9 +10,9 @@ import torch
 # Model settings
 # ======================================================================
 model_handle = model_zoo.UNet
-use_adaptive_batch_norm = False # If True set train_with_Bern to False
+use_adaptive_batch_norm = True # If True set train_with_Bern to False
 
-train_with_bern = True
+train_with_bern = False
 defrozen_conv_blocks = False
 
 # If cut_z is True, we cut the first and last 3 slices of the z axis
@@ -20,14 +20,14 @@ cut_z = False
 cut_z_saved = 3
 run_number = 1
 da_ratio = 0.0
-nchannels = 1 # [intensity, vx, vy, vz]
+nchannels = 4 # [intensity, vx, vy, vz]
 #note = f'_bern_{train_with_bern}_adaptive_{use_adaptive_batch_norm}_DEBUG'
 note = f'_full_run'
-extra_info = "_finetune_lr_1e-3_e10_AdamW_40_slices"
+extra_info = "_only_w_labels_adaptive_batch_norm_e80_lr_1e-3_AdamW_val_40"
 
 use_saved_model = True
 with_validation = True
-train_file_name = 'size_40_bern_images_and_labels_from_101_to_121' # bern_images_and_labels_from_101_to_116, only_w_labels_bern_images_and_labels_from_101_to_116, size_32_bern_images_and_labels_from_101_to_104
+train_file_name = 'only_w_labels_bern_images_and_labels_from_101_to_127' # bern_images_and_labels_from_101_to_116, only_w_labels_bern_images_and_labels_from_101_to_116, size_32_bern_images_and_labels_from_101_to_104
 # If with_validation is True, we use the following file for validation
 # else it's loaded but not used
 val_file_name = 'size_40_bern_images_and_labels_from_122_to_127'
@@ -45,7 +45,7 @@ nlabels = 2 # [background, foreground]
 # ======================================================================
 #max_steps = 10000
 #steps = 1000
-epochs = 10
+epochs = 80
 batch_size = 8
 learning_rate = 1e-3
 optimizer_handle = torch.optim.AdamW
