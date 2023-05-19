@@ -135,7 +135,110 @@ def predict(model: torch.nn.Module, image: torch.Tensor):
         return logits, probs, prediction
 
 
+# ==================================================================
+# crop or pad functions to change image size without changing resolution
+# ==================================================================    
+def crop_or_pad_4dvol_along_0(vol, n):    
+    x = vol.shape[0]
+    x_s = (x - n) // 2
+    x_c = (n - x) // 2
+    if x > n: # original volume has more slices that the required number of slices
+        vol_cropped = vol[x_s:x_s + n, :, :, :, :]
+    else: # original volume has equal of fewer slices that the required number of slices
+        vol_cropped = np.zeros((n, vol.shape[1], vol.shape[2], vol.shape[3], vol.shape[4]))
+        vol_cropped[x_c:x_c + x, :, :, :, :] = vol
+    return vol_cropped
 
+# ==================================================================
+# crop or pad functions to change image size without changing resolution
+# ==================================================================    
+def crop_or_pad_4dvol_along_1(vol, n):    
+    x = vol.shape[1]
+    x_s = (x - n) // 2
+    x_c = (n - x) // 2
+    if x > n: # original volume has more slices that the required number of slices
+        vol_cropped = vol[:, x_s:x_s + n, :, :, :]
+    else: # original volume has equal of fewer slices that the required number of slices
+        vol_cropped = np.zeros((vol.shape[0], n, vol.shape[2], vol.shape[3], vol.shape[4]))
+        vol_cropped[:, x_c:x_c + x, :, :, :] = vol
+    return vol_cropped
+
+# ==================================================================
+# crop or pad functions to change image size without changing resolution
+# ==================================================================    
+def crop_or_pad_4dvol_along_2(vol, n):    
+    x = vol.shape[2]
+    x_s = (x - n) // 2
+    x_c = (n - x) // 2
+    if x > n: # original volume has more slices that the required number of slices
+        vol_cropped = vol[:, :, x_s:x_s + n, :, :]
+    else: # original volume has equal of fewer slices that the required number of slices
+        vol_cropped = np.zeros((vol.shape[0], vol.shape[1], n, vol.shape[3], vol.shape[4]))
+        vol_cropped[:, :, x_c:x_c + x, :, :] = vol
+    return vol_cropped
+
+# ==================================================================
+# crop or pad functions to change image size without changing resolution
+# ==================================================================    
+def crop_or_pad_4dvol_along_3(vol, n):    
+    x = vol.shape[3]
+    x_s = (x - n) // 2
+    x_c = (n - x) // 2
+    if x > n: # original volume has more slices that the required number of slices
+        vol_cropped = vol[:, :, :, x_s:x_s + n, :]
+    else: # original volume has equal of fewer slices that the required number of slices
+        vol_cropped = np.zeros((vol.shape[0], vol.shape[1], vol.shape[2], n, vol.shape[4]))
+        vol_cropped[:, :, :, x_c:x_c + x, :] = vol
+    return vol_cropped
+
+# ==================================================================
+# crop or pad functions to change image size without changing resolution
+# ==================================================================    
+def crop_or_pad_4dvol(vol, target_size):
+    
+    vol = crop_or_pad_4dvol_along_0(vol, target_size[0])
+    vol = crop_or_pad_4dvol_along_1(vol, target_size[1])
+    vol = crop_or_pad_4dvol_along_2(vol, target_size[2])
+    vol = crop_or_pad_4dvol_along_3(vol, target_size[3])
+                
+    return vol
+
+def normalize_image_new(image):
+
+    # ===============
+    # initialize with zeros
+    # ===============
+    normalized_image = np.zeros((image.shape))
+
+    # ===============
+    # normalize magnitude channel
+    # ===============
+    normalized_image[...,0] = image[...,0] / np.amax(image[...,0])
+
+    # ===============
+    # normalize velocities
+    # ===============
+
+    # extract the velocities in the 3 directions
+    velocity_image = np.array(image[...,1:4])
+
+    # denoise the velocity vectors
+    velocity_image_denoised = gaussian_filter(velocity_image, 0.5)
+
+    # compute per-pixel velocity magnitude
+    velocity_mag_image = np.linalg.norm(velocity_image_denoised, axis=-1)
+
+    # velocity_mag_array = np.sqrt(np.square(velocity_arrays[...,0])+np.square(velocity_arrays[...,1])+np.square(velocity_arrays[...,2]))
+    # find max value of 95th percentile (to minimize effect of outliers) of magnitude array and its index
+    # vpercentile_min = np.percentile(velocity_mag_image, 5)
+    # vpercentile_max = np.percentile(velocity_mag_image, 95)
+
+    normalized_image[...,1] = 2.*(velocity_image_denoised[...,0] - np.min(velocity_image_denoised))/ np.ptp(velocity_image_denoised)-1
+    normalized_image[...,2] = 2.*(velocity_image_denoised[...,1] - np.min(velocity_image_denoised))/ np.ptp(velocity_image_denoised)-1
+    normalized_image[...,3] = 2.*(velocity_image_denoised[...,2] - np.min(velocity_image_denoised))/ np.ptp(velocity_image_denoised)-1
+
+
+    return normalized_image
 
 # ==========================================================
 # ==========================================================
@@ -378,70 +481,5 @@ def augment_data(images, # (batchsize, nx, ny, nt, 1)
             
     return images_, labels_
 
-# ==================================================================
-# crop or pad functions to change image size without changing resolution
-# ==================================================================    
-def crop_or_pad_4dvol_along_0(vol, n):    
-    x = vol.shape[0]
-    x_s = (x - n) // 2
-    x_c = (n - x) // 2
-    if x > n: # original volume has more slices that the required number of slices
-        vol_cropped = vol[x_s:x_s + n, :, :, :, :]
-    else: # original volume has equal of fewer slices that the required number of slices
-        vol_cropped = np.zeros((n, vol.shape[1], vol.shape[2], vol.shape[3], vol.shape[4]))
-        vol_cropped[x_c:x_c + x, :, :, :, :] = vol
-    return vol_cropped
-
-# ==================================================================
-# crop or pad functions to change image size without changing resolution
-# ==================================================================    
-def crop_or_pad_4dvol_along_1(vol, n):    
-    x = vol.shape[1]
-    x_s = (x - n) // 2
-    x_c = (n - x) // 2
-    if x > n: # original volume has more slices that the required number of slices
-        vol_cropped = vol[:, x_s:x_s + n, :, :, :]
-    else: # original volume has equal of fewer slices that the required number of slices
-        vol_cropped = np.zeros((vol.shape[0], n, vol.shape[2], vol.shape[3], vol.shape[4]))
-        vol_cropped[:, x_c:x_c + x, :, :, :] = vol
-    return vol_cropped
-
-# ==================================================================
-# crop or pad functions to change image size without changing resolution
-# ==================================================================    
-def crop_or_pad_4dvol_along_2(vol, n):    
-    x = vol.shape[2]
-    x_s = (x - n) // 2
-    x_c = (n - x) // 2
-    if x > n: # original volume has more slices that the required number of slices
-        vol_cropped = vol[:, :, x_s:x_s + n, :, :]
-    else: # original volume has equal of fewer slices that the required number of slices
-        vol_cropped = np.zeros((vol.shape[0], vol.shape[1], n, vol.shape[3], vol.shape[4]))
-        vol_cropped[:, :, x_c:x_c + x, :, :] = vol
-    return vol_cropped
-
-# ==================================================================
-# crop or pad functions to change image size without changing resolution
-# ==================================================================    
-def crop_or_pad_4dvol_along_3(vol, n):    
-    x = vol.shape[3]
-    x_s = (x - n) // 2
-    x_c = (n - x) // 2
-    if x > n: # original volume has more slices that the required number of slices
-        vol_cropped = vol[:, :, :, x_s:x_s + n, :]
-    else: # original volume has equal of fewer slices that the required number of slices
-        vol_cropped = np.zeros((vol.shape[0], vol.shape[1], vol.shape[2], n, vol.shape[4]))
-        vol_cropped[:, :, :, x_c:x_c + x, :] = vol
-    return vol_cropped
-
-# ==================================================================
-# crop or pad functions to change image size without changing resolution
-# ==================================================================    
-def crop_or_pad_4dvol(vol, target_size):
+                                
     
-    vol = crop_or_pad_4dvol_along_0(vol, target_size[0])
-    vol = crop_or_pad_4dvol_along_1(vol, target_size[1])
-    vol = crop_or_pad_4dvol_along_2(vol, target_size[2])
-    vol = crop_or_pad_4dvol_along_3(vol, target_size[3])
-                
-    return vol
