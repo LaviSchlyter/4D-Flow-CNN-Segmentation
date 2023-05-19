@@ -249,7 +249,7 @@ def train_model(model: torch.nn.Module,
     table_watch_val = wandb.Table(columns=["epoch", "image_number", "pred", "true", "input"])
     best_val_dice = 0
     #scheduler = CyclicLR(optimizer, base_lr = 5e-4 , max_lr = 1.5e-3, step_size_up=50, cycle_momentum=False )
-    #scheduler = ExponentialLR(optimizer, gamma=0.1)
+    
 
     if config_exp.loss_type == "dice":
         label_hot_bool = False
@@ -443,7 +443,7 @@ def main():
         model = exp_config.model_handle(in_channels=exp_config.nchannels, out_channels=exp_config.nlabels)
         model.to(device)
 
-        if not exp_config.use_saved_model:
+        if not exp_config.use_saved_model and not exp_config.train_with_bern:
             # We use the saved models from Freiburg so no need to load data
             # Load the data
             logging.info('============================================================')
@@ -487,7 +487,23 @@ def main():
                 logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
                 logging.info('Shape of validation images: %s' %str(images_vl.shape))
                 logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-            
+        """
+        if not exp_config.use_saved_model and exp_config.train_with_bern:
+            logging.info('============================================================')
+            logging.info('Training with Bern data from scratch')
+            basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
+            data_tr = h5py.File(basepath + f'/{exp_config.train_file_name}.hdf5','r')
+            data_vl = h5py.File(basepath + f'/{exp_config.val_file_name}.hdf5','r')
+            images_tr = data_tr['images_train'][:]
+            labels_tr = data_tr['labels_train'][:]
+            images_vl = data_vl['images_validation'][:]
+            labels_vl = data_vl['labels_validation'][:]     
+            logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
+            logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
+            logging.info('Shape of validation images: %s' %str(images_vl.shape))
+            logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
+
+        """ 
         # Load the saved models if that's what we use
         if exp_config.use_saved_model:
             logging.info('============================================================')
@@ -548,7 +564,7 @@ def main():
                 logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
              
               
-
+        
         
         # Here we train with Bern data and Freiburg data
         if ((exp_config.train_with_bern) and (not exp_config.use_saved_model)):
