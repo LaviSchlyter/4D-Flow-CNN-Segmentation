@@ -1,4 +1,26 @@
 
+# 4D Flow MRI CNN segmentation
+
+
+
+This repository contains the code for the segmentation network aimed at segmenting the aorta in 4D flow images as a preprocessing for the anomaly detection network. 
+We use a U-Net structure. 
+
+
+
+
+
+
+
+## Acknowledgements
+
+ - Original CNN segmentation [code](https://github.com/HPC-PREDICT/cnn_segmenter_for_mri_4d_flow) which was here converted from TensorFlow to Pytorch 
+
+## Authors
+
+- [@LaviniaSchlyter](https://github.com/LaviSchlyter)
+
+
 ## Run Locally
 
 Clone the project
