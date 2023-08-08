@@ -62,7 +62,6 @@ def normalize_image(image):
     # compute per-pixel velocity magnitude    
     velocity_mag_image = np.linalg.norm(velocity_image_denoised, axis=-1)
     
-    # velocity_mag_array = np.sqrt(np.square(velocity_arrays[...,0])+np.square(velocity_arrays[...,1])+np.square(velocity_arrays[...,2]))
     # find max value of 95th percentile (to minimize effect of outliers) of magnitude array and its index
     vpercentile = np.percentile(velocity_mag_image, 95)    
     normalized_image[...,1] = velocity_image_denoised[...,0] / vpercentile
@@ -111,16 +110,20 @@ def crop_or_pad_Bern_all_slices(data, new_shape):
 def crop_or_pad_Bern_slices(data, new_shape):
     processed_data = np.zeros(new_shape)
     # axis 0 is the x-axis and we crop from top since aorta is at the bottom
-    # axis 1 is the y-axis and we pad
+    # axis 1 is the y-axis and we pad or crop
     # axis 2 is the z-axis and we crop from the right (end of the image) since aorta is at the left
     delta_axis0 = data.shape[0] - new_shape[0]
     if len(new_shape) == 5: # Image
-        # The x is always cropped, y always padded, z_cropped
-        processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,:, :new_shape[2],...]
+        try:
+            processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,:, :new_shape[2],...]
+        except:
+            processed_data[:, :,:,:data.shape[3],... ] = data[delta_axis0:,:new_shape[1], :new_shape[2],...]
 
     if len(new_shape) == 4: # Label
-        # The x is always cropped, y always padded, z_cropped
-        processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,:, :new_shape[2],...]
+        try:
+            processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,:, :new_shape[2],...]
+        except:
+            processed_data[:, :,:,:data.shape[3],... ] = data[delta_axis0:,:new_shape[1], :new_shape[2],...]
     return processed_data
 
 
@@ -228,11 +231,6 @@ def normalize_image_new(image):
     # compute per-pixel velocity magnitude
     velocity_mag_image = np.linalg.norm(velocity_image_denoised, axis=-1)
 
-    # velocity_mag_array = np.sqrt(np.square(velocity_arrays[...,0])+np.square(velocity_arrays[...,1])+np.square(velocity_arrays[...,2]))
-    # find max value of 95th percentile (to minimize effect of outliers) of magnitude array and its index
-    # vpercentile_min = np.percentile(velocity_mag_image, 5)
-    # vpercentile_max = np.percentile(velocity_mag_image, 95)
-
     normalized_image[...,1] = 2.*(velocity_image_denoised[...,0] - np.min(velocity_image_denoised))/ np.ptp(velocity_image_denoised)-1
     normalized_image[...,2] = 2.*(velocity_image_denoised[...,1] - np.min(velocity_image_denoised))/ np.ptp(velocity_image_denoised)-1
     normalized_image[...,3] = 2.*(velocity_image_denoised[...,2] - np.min(velocity_image_denoised))/ np.ptp(velocity_image_denoised)-1
@@ -240,246 +238,3 @@ def normalize_image_new(image):
 
     return normalized_image
 
-# ==========================================================
-# ==========================================================
-# NOT USED  BELOW
-# ==========================================================
-# ==========================================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ==========================================================
-# ==========================================================       
-def save_sample_image_and_labels_across_z(x, # nz, nx, ny, nt, 4
-                                          y, # nz, nx, ny, nt
-                                          savepath):
-    
-    nz = x.shape[0]
-    nt = x.shape[3]
-    ids_z = np.arange(0, nz, nz//8)
-    ids_t = np.arange(0, nt, nt//8)
-    nc = len(ids_z)
-    nr = len(ids_t)
-            
-    for r in range(nr):
-
-        plt.figure(figsize=[3*nc, 3*nr])
-            
-        for c in range(nc): 
-            
-            x_c1 = x[ids_z[c], :, :, ids_t[r], 0]
-            x_c2 = x[ids_z[c], :, :, ids_t[r], 1]
-            x_c3 = x[ids_z[c], :, :, ids_t[r], 2]
-            x_c4 = x[ids_z[c], :, :, ids_t[r], 3]
-            y_ = y[ids_z[c], :, :, ids_t[r]]
-            
-            title = 'z_' + str(ids_z[c]) + '_'
-            
-            plt.subplot(nr, nc, nc*0 + c + 1); plt.imshow(x_c1, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c1')
-            plt.subplot(nr, nc, nc*1 + c + 1); plt.imshow(x_c2, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c2')
-            plt.subplot(nr, nc, nc*2 + c + 1); plt.imshow(x_c3, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c3')
-            plt.subplot(nr, nc, nc*3 + c + 1); plt.imshow(x_c4, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c4')
-            plt.subplot(nr, nc, nc*4 + c + 1); plt.imshow(y_, cmap='tab20'); plt.colorbar(); plt.title(title + 'gt')
-            
-        plt.savefig(savepath + '_t' + str(ids_t[r]) + '.png', bbox_inches='tight')
-        plt.close()
-        
-# ==========================================================
-# ==========================================================       
-def save_sample_image_and_labels_across_t(x, # nz, nx, ny, nt, 4
-                                          y, # nz, nx, ny, nt
-                                          savepath):
-    
-    nz = x.shape[0]
-    nt = x.shape[3]
-    
-    ids_z = np.arange(0, nz, nz//8)
-    ids_t = np.arange(0, nt, nt//8)
-    
-    nc = len(ids_t)
-    nr = len(ids_z)
-            
-    for r in range(nr):
-
-        plt.figure(figsize=[3*nc, 3*nr])
-            
-        for c in range(nc): 
-            
-            x_c1 = x[ids_z[r], :, :, ids_t[c], 0]
-            x_c2 = x[ids_z[r], :, :, ids_t[c], 1]
-            x_c3 = x[ids_z[r], :, :, ids_t[c], 2]
-            x_c4 = x[ids_z[r], :, :, ids_t[c], 3]
-            y_ = y[ids_z[r], :, :, ids_t[c]]
-            
-            title = 't_' + str(ids_t[c]) + '_'
-            
-            plt.subplot(nr, nc, nc*0 + c + 1); plt.imshow(x_c1, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c1')
-            plt.subplot(nr, nc, nc*1 + c + 1); plt.imshow(x_c2, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c2')
-            plt.subplot(nr, nc, nc*2 + c + 1); plt.imshow(x_c3, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c3')
-            plt.subplot(nr, nc, nc*3 + c + 1); plt.imshow(x_c4, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c4')
-            plt.subplot(nr, nc, nc*4 + c + 1); plt.imshow(y_, cmap='tab20'); plt.colorbar(); plt.title(title + 'gt')
-            
-        plt.savefig(savepath + '_z' + str(ids_z[r]) + '.png', bbox_inches='tight')
-        plt.close()
-        
-# ==========================================================
-# ==========================================================       
-def save_sample_results(im, # nz, nx, ny, nt, 4
-                        pr, # nz, nx, ny, nt
-                        gt, # nz, nx, ny, nt
-                        filename):
-    
-    nz = im.shape[0]
-    nt = im.shape[3]
-    ids_z = np.arange(0, nz, nz//8)
-    ids_t = np.arange(0, nt, nt//8)
-    nc = len(ids_z)
-    nt = len(ids_t)
-            
-    for t in range(nt):
-
-        nr = 6
-        plt.figure(figsize=[3*nc, 3*nr])
-            
-        for c in range(nc): 
-            
-            x_c1 = im[ids_z[c], :, :, ids_t[t], 0]
-            x_c2 = im[ids_z[c], :, :, ids_t[t], 1]
-            x_c3 = im[ids_z[c], :, :, ids_t[t], 2]
-            x_c4 = im[ids_z[c], :, :, ids_t[t], 3]
-            pr_ = pr[ids_z[c], :, :, ids_t[t]]
-            gt_ = gt[ids_z[c], :, :, ids_t[t]]
-            
-            title = 'z_' + str(ids_z[c]) + '_'
-            
-            plt.subplot(nr, nc, nc*0 + c + 1); plt.imshow(x_c1, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c1')
-            plt.subplot(nr, nc, nc*1 + c + 1); plt.imshow(x_c2, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c2')
-            plt.subplot(nr, nc, nc*2 + c + 1); plt.imshow(x_c3, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c3')
-            plt.subplot(nr, nc, nc*3 + c + 1); plt.imshow(x_c4, cmap='gray'); plt.colorbar(); plt.title(title + 'x_c4')
-            plt.subplot(nr, nc, nc*4 + c + 1); plt.imshow(pr_, cmap='tab20'); plt.colorbar(); plt.title(title + 'pred')
-            plt.subplot(nr, nc, nc*5 + c + 1); plt.imshow(gt_, cmap='tab20'); plt.colorbar(); plt.title(title + 'GT')
-            
-        plt.savefig(filename + '_t' + str(ids_t[t]) + '.png', bbox_inches='tight')
-        plt.close()
-        
-# ================================================================== 
-# Computes hausdorff distance between binary labels (compute separately for each label)
-# ==================================================================    
-def compute_surface_distance_per_label(y_1,
-                                       y_2,
-                                       sampling = 1,
-                                       connectivity = 1):
-
-    y1 = np.atleast_1d(y_1.astype(np.bool))
-    y2 = np.atleast_1d(y_2.astype(np.bool))
-    
-    conn = morphology.generate_binary_structure(y1.ndim, connectivity)
-
-    S1 = y1.astype(np.float32) - morphology.binary_erosion(y1, conn).astype(np.float32)
-    S2 = y2.astype(np.float32) - morphology.binary_erosion(y2, conn).astype(np.float32)
-    
-    S1 = S1.astype(np.bool)
-    S2 = S2.astype(np.bool)
-    
-    dta = morphology.distance_transform_edt(~S1, sampling)
-    dtb = morphology.distance_transform_edt(~S2, sampling)
-    
-    sds = np.concatenate([np.ravel(dta[S2 != 0]), np.ravel(dtb[S1 != 0])])
-    
-    return sds
-
-# ==================================================================   
-# ==================================================================   
-def compute_surface_distance(y1,
-                             y2,
-                             nlabels):
-    
-    mean_surface_distance_list = []
-    hausdorff_distance_list = []
-    
-    for l in range(1, nlabels):
-
-        surface_distance = compute_surface_distance_per_label(y_1 = (y1 == l),
-                                                              y_2 = (y2 == l))
-    
-        mean_surface_distance = surface_distance.mean()
-        # hausdorff_distance = surface_distance.max()
-        hausdorff_distance = np.percentile(surface_distance, 95)
-
-        mean_surface_distance_list.append(mean_surface_distance)
-        hausdorff_distance_list.append(hausdorff_distance)
-        
-    return np.array(hausdorff_distance_list)
-
-# ===========================      
-# data augmentation: gamma contrast, brightness (one number added to the entire slice), additive noise (random gaussian noise image added to the slice)
-# ===========================        
-def augment_data(images, # (batchsize, nx, ny, nt, 1)
-                 labels, # (batchsize, nx, ny, nt)
-                 data_aug_ratio,
-                 gamma_min = 0.5,
-                 gamma_max = 2.0,
-                 brightness_min = 0.0,
-                 brightness_max = 0.1,
-                 noise_min = 0.0,
-                 noise_max = 0.1):
-        
-    images_ = np.copy(images)
-    labels_ = np.copy(labels)
-    
-    for i in range(images.shape[0]):
-                        
-        # ========
-        # contrast # gamma contrast augmentation
-        # ========
-        if np.random.rand() < data_aug_ratio:
-            c = np.round(np.random.uniform(gamma_min, gamma_max), 2)
-            images_[i,...] = images_[i,...]**c
-
-        # ========
-        # brightness
-        # ========
-        if np.random.rand() < data_aug_ratio:
-            c = np.round(np.random.uniform(brightness_min, brightness_max), 2)
-            images_[i,...] = images_[i,...] + c
-            
-        # ========
-        # noise
-        # ========
-        if np.random.rand() < data_aug_ratio:
-            n = np.random.normal(noise_min, noise_max, size = images_[i,...].shape)
-            images_[i,...] = images_[i,...] + n
-            
-    return images_, labels_
-
-                                
-    

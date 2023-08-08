@@ -1,6 +1,7 @@
+#%%
 import torch
 import torch.nn.functional as F
-
+#%%
 ## ======================================================================
 ## ======================================================================
 def compute_dice(logits, labels, epsilon=1e-10):
@@ -12,7 +13,7 @@ def compute_dice(logits, labels, epsilon=1e-10):
     :return: dice (per label, per image in the batch)
     '''
 
-    #TODO check dimension
+    
     prediction = F.softmax(logits, dim=1)
     intersection = torch.mul(prediction, labels)
     # labels = [8,2,144,112,48]
@@ -50,13 +51,9 @@ def dice_loss(logits, labels, weights=None):
 
     if weights is None:
         loss = 1 - mean_dice
-        #loss = 1 - mean_fg_dice
+        
     else:
         loss = 1 - dice
-        #torch.mean(dice.cpu()*torch.from_numpy(weights).unsqueeze(1))
-        #loss = torch.sum(torch.mean(loss, dim = 1)* weights)
-        #loss = torch.mean(torch.mean(loss, dim = 1)* weights)
-        # For Bern 0.021 have labels the rest doesn't as opposed to Freiburg with 0.033
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         weights = torch.Tensor([1, 47.6]).to(device)
         loss = torch.sum(torch.mean(loss * weights, dim = 0))
@@ -76,7 +73,5 @@ def pixel_wise_cross_entropy_loss(logits, labels, weights=None):
     else:
         Loss = torch.nn.CrossEntropyLoss(reduction='none')
         loss = torch.mean(Loss(logits, labels.long())*weights, dim = 0)
-
-    #loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=labels))
     
     return loss

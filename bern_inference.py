@@ -166,7 +166,7 @@ def run_inference(training_output_path, inference_input_path, label_path, infere
 
 if __name__ == '__main__':
 
-    for class_label in ['controls']: # ['controls', 'patients']
+    for class_label in ['patients']: # ['controls', 'patients']
     #class_label = 'controls' # controls or patients
 
         basepath = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/preprocessed/{class_label}/h5'
@@ -187,7 +187,7 @@ if __name__ == '__main__':
             inference_output_dir = f"/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/logdir/inference_results/{exp_config.experiment_name}/{class_label}"
             # This will be used when we want to save the model chosen for segmentation
             use_final_output_dir = False
-            final_model_output_dir =f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/cnn_segmentations/{exp_config.experiment_name}/{class_label}'
+            final_model_output_dir =f"/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/cnn_segmentations/{exp_config.experiment_name}/{class_label}" 
             final_model_output_file = None
             if use_final_output_dir:
                 utils.make_dir_safely(final_model_output_dir)
