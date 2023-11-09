@@ -1,3 +1,4 @@
+# activate the seg_net environment 
 # ==================================================================
 # import 
 # ==================================================================
@@ -19,13 +20,6 @@ from pytorch_model_summary import summary
 from torch.optim.lr_scheduler import CyclicLR, ExponentialLR
 
 import model_zoo
-# ==================================================================
-# Set seed for reproducibility
-# ==================================================================
-
-SEED = 0 
-torch.manual_seed(SEED)
-np.random.seed(SEED)
 
 
 # ==================================================================
@@ -33,11 +27,18 @@ np.random.seed(SEED)
 # ==================================================================
 from experiments import unet as exp_config
 
+
 # ==================================================================
-# Set up logging
+# Set seed for reproducibility
 # ==================================================================
-log_dir = os.path.join(sys_config.log_root+'training_w_27', exp_config.experiment_name)
-print('log_dir: ', log_dir)
+if exp_config.REPRODUCE:
+    SEED = exp_config.SEED
+    torch.manual_seed(SEED)
+    np.random.seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 
 # ==================================================================
 # Save checkpoints
@@ -215,11 +216,6 @@ def do_eval(model,
 
     return avg_loss, avg_dice
 
-# Create session is the main function of the training script
-
-
-
-
 
 def train_model(model: torch.nn.Module, 
                 images_tr,
@@ -295,8 +291,8 @@ def train_model(model: torch.nn.Module,
             #scheduler.step()
 
         
-            #if (step) % exp_config.summary_writing_frequency == 0:                    
-            if step %60 ==0:
+            if (step) % exp_config.summary_writing_frequency == 0:                    
+            
                     logging.info('step %d: training_loss = %.2f' % (step, loss))
                     wandb.log({"step": step, "training_loss":loss})
             #train_loss += loss.item() # * inputs.size(0)
@@ -305,9 +301,9 @@ def train_model(model: torch.nn.Module,
             # Compute the loss on the entire training set
             # ===========================
 
-            #if (step) % exp_config.train_eval_frequency == 0:
-            if step % 120 == 0:
-                logging.info('Training Data Eval:')
+            if (step) % exp_config.train_eval_frequency == 0:
+            #if step % 120 == 0:
+                logging.info('Training data evaluation:')
                 
                 train_loss, train_dice = do_eval(model,
                         config_exp,
@@ -331,10 +327,10 @@ def train_model(model: torch.nn.Module,
             # ===========================
             # Evaluate on the validation set
             # ===========================
-            #if (step) % exp_config.val_eval_frequency == 0:
+            
             if exp_config.with_validation:
-                if step % 50 == 0:
-                    logging.info('Validation Data Eval:')
+                if (step) % exp_config.val_eval_frequency == 0:
+                    logging.info('Validation data evaluation:')
                     utils.make_dir_safely(log_dir + '/results/')
 
                     val_loss, val_dice = do_eval(model,
@@ -344,7 +340,7 @@ def train_model(model: torch.nn.Module,
                             device,
                             training_data = False,
                             label_hot_bool = label_hot_bool)
-                if step % 100 == 0:
+                if step % 400 == 0:
                     ### Save images every 5 epoch (400)
                     utils.make_dir_safely(log_dir + '/results/' + 'visualization/' + 'training/')
                     utils.make_dir_safely(log_dir + '/results/' + 'visualization/' + 'validation/')
@@ -352,6 +348,11 @@ def train_model(model: torch.nn.Module,
 
                     save_results_visualization(model, config_exp, images_tr, labels_tr, device, os.path.join(log_dir + '/results/' + 'visualization/' + 'training/', f"step_{step}_"), table_watch=table_watch_train)
                     save_results_visualization(model, config_exp, images_val, labels_val, device, os.path.join(log_dir + '/results/' + 'visualization/' + 'validation/', f"step_{step}_"), table_watch=table_watch_val)
+
+                # ===========================
+                # save model if the val dice is the best so far
+                # ===========================
+
                 if val_dice > best_val_dice:
                     best_val_dice = val_dice
                     best_val_epoch = epoch
@@ -361,13 +362,11 @@ def train_model(model: torch.nn.Module,
                     logging.info('Best validation dice so far, saving model to %s' % save_path)
                     wandb.log({"best_validation": best_val_dice})   
             else:
-                if step%200 == 0:
+                if step%exp_config.save_frequency == 0:
                     
                     utils.make_dir_safely(log_dir + '/results/' + 'visualization/' + 'training/')
                     save_results_visualization(model, config_exp, images_tr, labels_tr, device, os.path.join(log_dir + '/results/' + 'visualization/' + 'training/', f"step_{step}_"), table_watch=table_watch_train)
-                # ===========================
-                # save model if the val dice is the best so far
-                # ===========================
+                
 
                 
 
@@ -434,21 +433,39 @@ def cut_z_slices(images, labels, freiburg = False):
 
 
 def main():
+    # TODO: The organization of the different possibilities could be better
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Using device: {}".format(device))
     wandb_mode = "online" # online/ disabled
-    with wandb.init(mode= wandb_mode,project="segmentation", name = exp_config.experiment_name, notes = "segmentation", tags =["improved_manual_seg", "40_slices"]):
+
+    # Add tags to the experiment based on config file
+    # Such as epochs, loss_function, train_file_name, use_adaptive_batch_norm, train_with_bern, use_saved_model
+    #defrozen_conv_blocks, only_w_bern
+    wandb_tags = [f"epochs_{exp_config.epochs}", f"loss_function_{exp_config.loss_type}", f"{exp_config.train_file_name}", f"use_adaptive_batch_norm_{exp_config.use_adaptive_batch_norm}", f"train_with_bern_{exp_config.train_with_bern}", f"use_saved_model_{exp_config.use_saved_model}"
+                  , f"defrozen_conv_blocks_{exp_config.defrozen_conv_blocks}", f"only_w_bern_{exp_config.only_w_bern}", f"{exp_config.val_file_name}",
+                  f"reproduce_{exp_config.REPRODUCE}", f"seed_{exp_config.SEED}"]
+
+    #wandb_tags.append("debug")
+
+    with wandb.init(mode= wandb_mode,project="3D_segmentation", name = exp_config.experiment_name, notes = "segmentation", tags =wandb_tags):
 
         # Create the model
         model = exp_config.model_handle(in_channels=exp_config.nchannels, out_channels=exp_config.nlabels)
         model.to(device)
-
+        """
+        We have several ways of training the segmentation network:
+        1. Training a model only with the Freiburg data (use_saved_model = False and train_with_bern = False)
+        2. Training with Bern data from scratch without Freiburg (use_saved_model = False, train_with_bern = True, only_w_bern = True)
+        3. Finetuning with batch normalization for Bern data with saved model (use_saved_model = True, use_adaptive_batch_norm = True)
+        4. Traininig with Bern and Freiburg data (False = True, train_with_bern = True, only_w_bern = False)
+        5. Finetune with Bern but with all layers (use_saved_model = True, train_with_bern = True)
+        """
         if not exp_config.use_saved_model and not exp_config.train_with_bern:
             # We use the saved models from Freiburg so no need to load data
             # Load the data
             logging.info('============================================================')
-            logging.info('Loading training data from: ' + sys_config.project_data_root)    
-            data_tr = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_root,
+            logging.info('Loading training data from: ' + sys_config.project_data_freiburg_root)    
+            data_tr = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
                                                             idx_start = 0,
                                                             idx_end = 19,
                                                             train_test='train')
@@ -459,8 +476,8 @@ def main():
             logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
     
             logging.info('============================================================')
-            logging.info('Loading validation data from: ' + sys_config.project_data_root)        
-            data_vl = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_root,
+            logging.info('Loading validation data from: ' + sys_config.project_data_freiburg_root)        
+            data_vl = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
                                                             idx_start = 20,
                                                             idx_end = 24,
                                                             train_test='validation')
@@ -487,13 +504,14 @@ def main():
                 logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
                 logging.info('Shape of validation images: %s' %str(images_vl.shape))
                 logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-        """
-        if not exp_config.use_saved_model and exp_config.train_with_bern:
+
+        if ((not exp_config.use_saved_model) and (exp_config.train_with_bern) and (exp_config.only_w_bern)):
+            # Training with Bern data from scratch without Freiburg
             logging.info('============================================================')
-            logging.info('Training with Bern data from scratch')
-            basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
-            data_tr = h5py.File(basepath + f'/{exp_config.train_file_name}.hdf5','r')
-            data_vl = h5py.File(basepath + f'/{exp_config.val_file_name}.hdf5','r')
+            logging.info('Training with Bern data from scratch without Freiburg')
+            #basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
+            data_tr = h5py.File(sys_config.project_data_bern_root + f'/{exp_config.train_file_name}.hdf5','r')
+            data_vl = h5py.File(sys_config.project_data_bern_root + f'/{exp_config.val_file_name}.hdf5','r')
             images_tr = data_tr['images_train'][:]
             labels_tr = data_tr['labels_train'][:]
             images_vl = data_vl['images_validation'][:]
@@ -503,7 +521,7 @@ def main():
             logging.info('Shape of validation images: %s' %str(images_vl.shape))
             logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
 
-        """ 
+         
         # Load the saved models if that's what we use
         if exp_config.use_saved_model:
             logging.info('============================================================')
@@ -530,18 +548,18 @@ def main():
                         param.requires_grad = False
             
             print("Loading Bern data... ")
-            basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
-            data_tr = h5py.File(basepath + f'/{exp_config.train_file_name}.hdf5','r')
-            data_vl = h5py.File(basepath + f'/{exp_config.val_file_name}.hdf5','r')
+            #basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
+            data_tr = h5py.File(sys_config.project_data_bern_root + f'/{exp_config.train_file_name}.hdf5','r')
+            data_vl = h5py.File(sys_config.project_data_bern_root + f'/{exp_config.val_file_name}.hdf5','r')
             images_tr = data_tr['images_train'][:]
 
             labels_tr = data_tr['labels_train'][:]
             images_vl = data_vl['images_validation'][:]
             labels_vl = data_vl['labels_validation'][:]     
-            logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-            logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-            logging.info('Shape of validation images: %s' %str(images_vl.shape))
-            logging.info('Shape of validation labels: %s' %str(labels_vl.shape)) 
+            logging.info('Shape of Bern training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
+            logging.info('Shape of Bern training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
+            logging.info('Shape of Bern validation images: %s' %str(images_vl.shape))
+            logging.info('Shape of Bern validation labels: %s' %str(labels_vl.shape)) 
             
 
             
@@ -567,11 +585,23 @@ def main():
         
         
         # Here we train with Bern data and Freiburg data
-        if ((exp_config.train_with_bern) and (not exp_config.use_saved_model)):
+        if ((exp_config.train_with_bern) and (not exp_config.use_saved_model) and (not exp_config.only_w_bern)):
             print("Loading Bern data... and appending to the Freiburg data...")
-            basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
-            bern_tr = h5py.File(basepath + f'/{exp_config.train_file_name}.hdf5','r')
-            bern_vl = h5py.File(basepath + f'/{exp_config.val_file_name}.hdf5','r')
+            #basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
+            bern_tr = h5py.File(sys_config.project_data_bern_root + f'/{exp_config.train_file_name}.hdf5','r')
+            bern_vl = h5py.File(sys_config.project_data_bern_root + f'/{exp_config.val_file_name}.hdf5','r')
+            data_tr = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
+                                                            idx_start = 0,
+                                                            idx_end = 19,
+                                                            train_test='train')
+            images_tr = data_tr['images_train']
+            labels_tr = data_tr['labels_train']
+            data_vl = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
+                                                            idx_start = 20,
+                                                            idx_end = 24,
+                                                            train_test='validation')
+            images_vl = data_vl['images_validation']
+            labels_vl = data_vl['labels_validation']
             bern_images_tr = bern_tr['images_train']
             bern_labels_tr = bern_tr['labels_train']
             bern_images_vl = bern_vl['images_validation']
@@ -609,18 +639,14 @@ def main():
             # Here we finetune the model with Bern data using all the layers
             print("Loading Bern data... ")
             print("Finetuning the model with Bern data...")
-            basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
-            data_tr = h5py.File(basepath + f'/{exp_config.train_file_name}.hdf5','r')
-            data_vl = h5py.File(basepath + f'/{exp_config.val_file_name}.hdf5','r')
+            #basepath = "/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady"
+            data_tr = h5py.File(sys_config.project_data_bern_root + f'/{exp_config.train_file_name}.hdf5','r')
+            data_vl = h5py.File(sys_config.project_data_bern_root + f'/{exp_config.val_file_name}.hdf5','r')
             images_tr = data_tr['images_train'][:]
             labels_tr = data_tr['labels_train'][:]
             images_vl = data_vl['images_validation'][:]
             labels_vl = data_vl['labels_validation'][:]
 
-            
-            
-        
-            
             
             if exp_config.cut_z:
                 logging.info('============================================================')
@@ -642,23 +668,7 @@ def main():
             logging.info('Only the phase x images (channel 1) will be used for the segmentation...')
             logging.info('============================================================')
 
-        """
-        if exp_config.cut_z:
-                # We remove parts of the images in the z direction
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                images_tr, labels_tr = cut_z_slices(images_tr, labels_tr)
-                images_vl, labels_vl = cut_z_slices(images_vl, labels_vl)
-                logging.info('============================================================')
-                logging.info('Dimensions after cutting...')
-                logging.info('============================================================')
-                logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-                logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-                logging.info('Shape of validation images: %s' %str(images_vl.shape))
-                logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-        """
-
+        
         
         # Create the experiment directory
         log_dir = os.path.join(sys_config.log_root, exp_config.experiment_name)
@@ -677,10 +687,10 @@ def main():
                              "epochs": exp_config.epochs, "loss": exp_config.loss_type, "z_cut":exp_config.cut_z, "use_bern_data":exp_config.train_with_bern, "defrozen_conv_blocks": exp_config.defrozen_conv_blocks, "adaptive_batch_norm": exp_config.use_adaptive_batch_norm, "pixel_pad_weight": exp_config.add_pixels_weight})
 
         
-        logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-        logging.info('Shape of training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
-        logging.info('Shape of validation images: %s' %str(images_vl.shape))
-        logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
+        logging.info('Shape of FINAL training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
+        logging.info('Shape of FINAL training labels: %s' %str(labels_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t]
+        logging.info('Shape of FINAL validation images: %s' %str(images_vl.shape))
+        logging.info('Shape of FINAL validation labels: %s' %str(labels_vl.shape))
         print(summary(exp_config.model_handle(exp_config.nchannels, exp_config.nlabels).to(device), torch.zeros(size = (exp_config.batch_size,exp_config.nchannels, 144,112,48) ).to(device)))
         train_model(model, images_tr, labels_tr, images_vl, labels_vl, device, optimizer, log_dir, exp_config)
 
