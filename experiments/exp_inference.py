@@ -12,15 +12,24 @@
 import os
 import logging
 import sys
+import datetime
 sys.path.append(os.path.join(os.getcwd(), 'lschlyter/CNN-segmentation'))
 from utils import make_dir_safely
 import model_zoo
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
+
 # Name of the experiment who's best model we want to use
+experiment_name = '231030-1542_da_0.0_nchan4_r1_loss_dice_e125_bs8_lr0.001_w_val_tr_only_w_labels_bern_and_freiburg'
+#231030-1608_da_0.0_nchan4_r1_loss_dice_e80_bs8_lr0.001_w_val_tr_only_w_labels_finetune
+#231030-1542_da_0.0_nchan4_r1_loss_dice_e125_bs8_lr0.001_w_val_tr_only_w_labels_bern_and_freiburg
+
+# Decide which data to use 
+class_labels = ['patients_compressed_sensing' ]#['controls', 'patients', 'patients_compressed_sensing', 'controls_compressed_sensing']
+
+# This will be used when we want to save the model chosen for segmentation
+use_final_output_dir = False
 nchannels = 4
-#experiment_name = f'unet3d_da_0.0nchannels{nchannels}_r1_loss_dice_cut_z_False_full_run_bern_only_w_labels'
-experiment_name = 'unet3d_da_0.0nchannels4_r1_loss_dice_cut_z_False_full_run_only_w_labels_e80_lr_1e-3_AdamW_val_40'
 use_validation = True
 predict_on_training = False
 

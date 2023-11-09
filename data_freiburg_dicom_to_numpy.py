@@ -125,8 +125,8 @@ def remove_pngs(dir_name):
 # ====================
 # set basepaths for reading and writing
 # ====================
-basepath_reading = sys_config.orig_data_root # '/usr/bmicnas01/data-biwi-01/nkarani/projects/hpc_predict/data/freiburg/main_data_transfer/126_subjects'
-basepath_writing = sys_config.project_data_root # '/usr/bmicnas01/data-biwi-01/nkarani/students/nicolas/data/freiburg'
+basepath_reading = sys_config.orig_data_root #aka '/usr/bmicnas01/data-biwi-01/nkarani/projects/hpc_predict/data/freiburg/main_data_transfer/126_subjects'
+basepath_writing = sys_config.project_data_root #aka '/usr/bmicnas01/data-biwi-01/nkarani/students/nicolas/data/freiburg'
 
 # ====================
 # walk through all the subjects, read the dicoms and save as npy arrays

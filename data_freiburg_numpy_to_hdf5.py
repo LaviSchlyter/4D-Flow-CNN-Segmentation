@@ -192,7 +192,7 @@ if __name__ == '__main__':
     # ==========================================
     # The original dicom images have been saved as numpy arrays at this basepath
     # ==========================================
-    basepath = sys_config.project_data_root # '/usr/bmicnas01/data-biwi-01/nkarani/students/nicolas/data/freiburg'
+    basepath = sys_config.project_data_freiburg_root # '/usr/bmicnas01/data-biwi-01/nkarani/students/nicolas/data/freiburg'
 
     data_train = load_data(basepath = basepath, idx_start = 0, idx_end = 19, train_test='train')
     data_val = load_data(basepath = basepath, idx_start = 20, idx_end = 24, train_test='validation')    

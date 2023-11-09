@@ -7,7 +7,7 @@ import config.system as sys_config
 # ==============================================
 # basepath where the original images of all subjects have been saved as numpy arrays 
 # ==============================================
-basepath = sys_config.project_data_root #'/usr/bmicnas01/data-biwi-01/nkarani/students/nicolas/data/freiburg'
+basepath = sys_config.project_data_freiburg_root #'/usr/bmicnas01/data-biwi-01/nkarani/students/nicolas/data/freiburg'
 
 # ==============================================
 # make a list of all subjects' relative paths
