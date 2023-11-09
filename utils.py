@@ -102,9 +102,38 @@ def crop_or_pad_Bern_all_slices(data, new_shape):
     if len(new_shape) == 4: # Label
         processed_data = np.zeros((new_shape[0], new_shape[1], data.shape[2], new_shape[3]))
         # The x is always cropped, y always padded
-        processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,...]
+        if delta_axis1 <= 0:
+            processed_data[:, :data.shape[1],:,:data.shape[3],... ] = data[delta_axis0:,...]
+        else:
+            # x croped and y cropped equally either way
+            processed_data[:, :,:,:data.shape[3],... ] = data[delta_axis0:, (delta_axis1//2):-(delta_axis1//2),...]
     return processed_data
 
+def crop_or_pad_final_seg(seg, shape):
+    """
+    This function crops or pads the segmentation to match the shape of the image
+    But it is done accounting that the padding and cropping must be done in a certain specific direction 
+
+    Args:
+        seg (np.array): The segmentation to be cropped or padded
+        shape (tuple): The shape of the image that the segmentation should match
+    
+    """
+
+    seg_reshaped = np.zeros(shape)
+    # Check if last dimension should be cropped or padded
+    if (seg.shape[3] > shape[3]) and (seg.shape[1] < shape[1]) and (seg.shape[2] < shape[2]):
+        seg_reshaped[-seg.shape[0]:, :seg.shape[1], :seg.shape[2], :] = seg[:, :, :, :shape[3]] 
+
+        #seg_reshaped[-seg.shape[0]:, :seg.shape[1], :seg.shape[2], :] = seg[:, :, :, :shape[3]] 
+    
+
+    elif (seg.shape[3] > shape[3]) and (seg.shape[1] > shape[1]):
+        seg_reshaped[-seg.shape[0]:, :, :seg.shape[2], :] = seg[:, :shape[1], :, :shape[3]] 
+    else:
+        seg_reshaped[-seg.shape[0]:, :, :seg.shape[2], :seg.shape[3]] = seg[:, :shape[1], :, :] 
+
+    return seg_reshaped
 
 
 def crop_or_pad_Bern_slices(data, new_shape):
@@ -238,3 +267,40 @@ def normalize_image_new(image):
 
     return normalized_image
 
+def augment_data(images, # (batchsize, nx, ny, nt, 1)
+                 labels, # (batchsize, nx, ny, nt)
+                 data_aug_ratio,
+                 gamma_min = 0.5,
+                 gamma_max = 2.0,
+                 brightness_min = 0.0,
+                 brightness_max = 0.1,
+                 noise_min = 0.0,
+                 noise_max = 0.1):
+        
+    images_ = np.copy(images)
+    labels_ = np.copy(labels)
+    
+    for i in range(images.shape[0]):
+                        
+        # ========
+        # contrast # gamma contrast augmentation
+        # ========
+        if np.random.rand() < data_aug_ratio:
+            c = np.round(np.random.uniform(gamma_min, gamma_max), 2)
+            images_[i,...] = images_[i,...]**c
+
+        # ========
+        # brightness
+        # ========
+        if np.random.rand() < data_aug_ratio:
+            c = np.round(np.random.uniform(brightness_min, brightness_max), 2)
+            images_[i,...] = images_[i,...] + c
+            
+        # ========
+        # noise
+        # ========
+        if np.random.rand() < data_aug_ratio:
+            n = np.random.normal(noise_min, noise_max, size = images_[i,...].shape)
+            images_[i,...] = images_[i,...] + n
+            
+    return images_, labels_
