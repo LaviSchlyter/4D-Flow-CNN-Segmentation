@@ -151,3 +151,5 @@ model.py
 utils_centerline.py
 visualization_Bern_w_training.ipynb
 visualization_Bern.ipynb
+data/
+utils_archive.py

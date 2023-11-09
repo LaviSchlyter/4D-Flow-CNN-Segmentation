@@ -49,7 +49,7 @@ Preprocess the data by running
   python data_freiburg_numpy_to_hdf5.py
 
 # For bern the data was within the data folder (not publiblicly available) converted to numpy similarly to the Freiburg converted
-# Go into the Bern_numpy_to_hdf5.ipynb notebook and depending on what type of training you want run different cells 
+# Go into the Bern_numpy_to_hdf5_for_training.ipynb notebook and depending on what type of training you want run different cells . 
 ```
 
 Train the network

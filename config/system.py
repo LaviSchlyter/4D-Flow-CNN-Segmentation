@@ -16,7 +16,8 @@ local_hostnames = ['biwidl203']
 # project dirs
 # ==================================================================
 project_code_root = '/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/'
-project_data_root = '/usr/bmicnas02/data-biwi-01/jeremy_students/previous_work/nicolas/data/freiburg'
+project_data_freiburg_root = '/usr/bmicnas02/data-biwi-01/jeremy_students/previous_work/nicolas/data/freiburg'
+project_data_bern_root = "/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/data"
 # Note that this is the base direectory where the freiburg images have been saved a numpy arrays.
 # The original dicom files are not here and they are not required for any further processing.
 # Just for completeness, the bast path for the original dicom files of the freiburg dataset are here:
