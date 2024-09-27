@@ -433,6 +433,12 @@ def cut_z_slices(images, labels, freiburg = False):
 
 
 def main():
+    # Ensure compatibility between configurations
+    if exp_config.use_adaptive_batch_norm and exp_config.train_with_bern:
+        raise ValueError(
+            "Invalid configuration: 'use_adaptive_batch_norm' cannot be True while 'train_with_bern' is True. "
+            "Set 'train_with_bern' to False or 'use_adaptive_batch_norm' to False."
+        )
     # TODO: The organization of the different possibilities could be better
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Using device: {}".format(device))
@@ -445,7 +451,7 @@ def main():
                   , f"defrozen_conv_blocks_{exp_config.defrozen_conv_blocks}", f"only_w_bern_{exp_config.only_w_bern}", f"{exp_config.val_file_name}",
                   f"reproduce_{exp_config.REPRODUCE}", f"seed_{exp_config.SEED}"]
 
-    #wandb_tags.append("debug")
+    wandb_tags.append("including_compressed_sensing")
 
     with wandb.init(mode= wandb_mode,project="3D_segmentation", name = exp_config.experiment_name, notes = "segmentation", tags =wandb_tags):
 

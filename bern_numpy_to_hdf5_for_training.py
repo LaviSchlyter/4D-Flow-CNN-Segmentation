@@ -5,6 +5,9 @@ import h5py
 import numpy as np
 from utils import crop_or_pad_Bern_slices, crop_or_pad_Bern_all_slices, normalize_image
 
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+
 def process_patient_data(patient, image_data, label_data, common_image_shape, common_label_shape, mode='fixed_slices'):
     """
     Processes the data for a single patient, handling both imaging and segmentation data.
@@ -51,20 +54,19 @@ def prepare_and_write_data_bern(idx_start, idx_end, filepath_output, train_test,
     - train_test (str): The train/test string to know which dataset to populate.
     - mode (str): Mode of operation, either 'fixed_slices' or 'all_slices'.
     - z_slices (int): The number of slices to use for the z axis.
-    - with_labels (bool): Whether to include labels or not.
+    - with_labels (bool): Whether to include only slices with labels (aorta present).
 
     """
     # Common logic setup
     common_image_shape = [144, 112, z_slices if mode == 'fixed_slices' else None, 48, 4]
     common_label_shape = [144, 112, z_slices if mode == 'fixed_slices' else None, 48]
-    basepath_jerem = os.getcwd()
+    basepath_jerem = '/usr/bmicnas02/data-biwi-01/jeremy_students'
     hand_seg_path_controls = basepath_jerem + '/data/inselspital/kady/segmenter_rw_pw_hard/controls'
     hand_seg_path_patients = basepath_jerem + '/data/inselspital/kady/segmenter_rw_pw_hard/patients'
     list_hand_seg_images = os.listdir(hand_seg_path_controls) + os.listdir(hand_seg_path_patients) + os.listdir(hand_seg_path_patients + '_compressed_sensing') + os.listdir(hand_seg_path_controls+'_compressed_sensing')
     list_hand_seg_images.sort()
 
     # randomize list_hand_seg_images alwayzs the same way
-    # TODO ? Maybe later as we might have to introduce some patients in the training and not just validation set
     rng = np.random.RandomState(0)
     rng.shuffle(list_hand_seg_images)
     
@@ -75,8 +77,10 @@ def prepare_and_write_data_bern(idx_start, idx_end, filepath_output, train_test,
     patients = list_hand_seg_images[idx_start:idx_end]
     # Sort the list
     num_images_to_load = len(patients)
+
     
-    print("Output filepath: ", filepath_output)
+    logging.info("Output filepath: %s", filepath_output)
+
     hdf5_file = h5py.File(filepath_output, "a" if mode == 'all_slices' else "w")
     
     if mode == 'fixed_slices':
@@ -103,8 +107,8 @@ def prepare_and_write_data_bern(idx_start, idx_end, filepath_output, train_test,
         }
 
     for i, patient in enumerate(patients):
-        print(f'loading subject {i} out of {num_images_to_load}...')
-        print(f'patient: {patient}')
+        logging.info(f'loading subject {i} out of {num_images_to_load}...')
+        logging.info(f'patient: {patient}')
         CS = False
 
         if os.listdir(hand_seg_path_controls).__contains__(patient):
@@ -126,9 +130,10 @@ def prepare_and_write_data_bern(idx_start, idx_end, filepath_output, train_test,
         seg = np.load(os.path.join(seg_path, patient))
 
         if CS:
-            # Remove the first 10 slices
-            image = image[10:]
-            seg = seg[10:]
+            # Remove the first 10 z slices
+            
+            image = image[:,:,10:,...]
+            seg = seg[:,:,10:, ...]
 
         
         image_data, label_data = process_patient_data(patient, image, seg, common_image_shape, common_label_shape, mode)
@@ -141,8 +146,10 @@ def prepare_and_write_data_bern(idx_start, idx_end, filepath_output, train_test,
             if with_labels:
                 index_w_labels = np.where(label_data.sum(axis = (1,2,3)) > 0)[0]
                 label_data = label_data[index_w_labels]
-            print(label_data.shape)
-            print(image_data.shape)
+            
+            logging.info(f'Label data shape: {label_data.shape}')
+            logging.info(f'Image data shape: {image_data.shape}')
+
             dataset['labels_%s' % train_test].resize(dataset['labels_%s' % train_test].shape[0] +label_data.shape[0], axis=0)
             dataset['labels_%s' % train_test][-label_data.shape[0]:] = label_data
 
@@ -173,6 +180,7 @@ def prepare_data(basepath, config):
     """
     filepath_output = os.path.join(basepath, 'data', config['filename'])
     
+    # Flag to determine if data should be prepared
     if config['flag']:
         prepare_and_write_data_bern(
             config['idx_start'], 
@@ -191,72 +199,72 @@ if __name__ == '__main__':
 
     configurations = [{
         'flag': False, # prepare_train_fixed_slices
-        'filename': f'size_40_bern_images_and_labels_from_01_to_35.hdf5',
-        'idx_start': 0,
-        'idx_end': 35,
-        'train_test': 'train',
-        'mode': 'fixed_slices',
-        'z_slices': 40
+        'filename': f'size_40_bern_images_and_labels_from_01_to_36.hdf5', # Name of the file to save
+        'idx_start': 0, # Start index
+        'idx_end': 36, # End index
+        'train_test': 'train', # Train or test
+        'mode': 'fixed_slices', # Set a fixed number of slices (set in z_slices) or 'all_slices'
+        'z_slices': 40 # Number of slices
     },
     {
         'flag': False, # prepare_validation_fixed_slices
-        'filename': f'size_40_bern_images_and_labels_from_36_to_45.hdf5',
-        'idx_start': 35,
-        'idx_end': 45,
+        'filename': f'size_40_bern_images_and_labels_from_37_to_48.hdf5',
+        'idx_start': 36,
+        'idx_end': 48,
         'train_test': 'validation',
         'mode': 'fixed_slices',
         'z_slices': 40
     },
     {
         'flag': False, 
-        'filename': f'size_40_bern_images_and_labels_from_01_to_45.hdf5',
+        'filename': f'size_40_bern_images_and_labels_from_01_to_48.hdf5',
         'idx_start': 0,
-        'idx_end': 45,
+        'idx_end': 48,
         'train_test': 'train',
         'mode': 'fixed_slices',
         'z_slices': 40
     },
     {
         'flag': False, # prepare_train_all_slices_w_labels
-        'filename': f'only_w_labels_bern_images_and_labels_from_01_to_35.hdf5',
+        'filename': f'only_w_labels_bern_images_and_labels_from_01_to_36.hdf5',
         'idx_start': 0,
-        'idx_end': 35,
+        'idx_end': 36,
         'train_test': 'train',
         'mode': 'all_slices',
-        'with_labels': True
+        'with_labels': True # Take only slices with labels (a.k.a. image with aorta present)
     },
     {
         'flag': False, # prepare_validation_all_slices_w_labels
-        'filename': f'only_w_labels_bern_images_and_labels_from_36_to_45.hdf5',
-        'idx_start': 35,
-        'idx_end': 45,
+        'filename': f'only_w_labels_bern_images_and_labels_from_37_to_48.hdf5',
+        'idx_start': 36,
+        'idx_end': 48,
         'train_test': 'validation',
         'mode': 'all_slices',
         'with_labels': True
     },
     {
-        'flag': True, # prepare_validation_all_slices_w_labels
-        'filename': f'only_w_labels_bern_images_and_labels_from_0_to_45.hdf5',
+        'flag': False, # prepare_validation_all_slices_w_labels
+        'filename': f'only_w_labels_bern_images_and_labels_from_01_to_48.hdf5',
         'idx_start': 0,
-        'idx_end': 45,
+        'idx_end': 48,
         'train_test': 'train',
         'mode': 'all_slices',
         'with_labels': True
     },
     {
         'flag': False, # prepare_train_all_slices
-        'filename': f'bern_images_and_labels_from_01_to_35.hdf5',
+        'filename': f'bern_images_and_labels_from_01_to_36.hdf5',
         'idx_start': 0,
-        'idx_end': 35,
+        'idx_end': 36,
         'train_test': 'train',
         'mode': 'all_slices',
         'with_labels': False
     },
     {
         'flag': False, # prepare_validation_all_slices
-        'filename': f'bern_images_and_labels_from_36_to_45.hdf5',
-        'idx_start': 35,
-        'idx_end': 45,
+        'filename': f'bern_images_and_labels_from_37_to_48.hdf5',
+        'idx_start': 36,
+        'idx_end': 48,
         'train_test': 'validation',
         'mode': 'all_slices',
         'with_labels': False
@@ -339,74 +347,6 @@ if __name__ == '__main__':
     for config in configurations:
         prepare_data(basepath, config)
 
-
-
-
-
-"""
-
-    # Prepare train data for fixed slices
-    prepare_train_fixed_slices = False
-    idx_start = 0
-    idx_end = 21
-    z_slices = 40
-    train_test = 'train'
-    filepath_output = os.path.join(basepath, 'data', f'size_{z_slices}_bern_images_and_labels_from_101_to_121.hdf5')
-    if prepare_train_fixed_slices:
-        prepare_and_write_data_bern(basepath, idx_start, idx_end, filepath_output, train_test, mode='fixed_slices', z_slices=z_slices)
-
-    # Prepare validation data for fixed slices
-    prepare_validation_fixed_slices = False
-    idx_start = 22
-    idx_end = 27
-    z_slices = 40
-    train_test = 'validation'
-    filepath_output = os.path.join(basepath, 'data', f'size_{z_slices}_bern_images_and_labels_from_101_to_121.hdf5')
-    if prepare_validation_fixed_slices:
-        prepare_and_write_data_bern(basepath, idx_start, idx_end, filepath_output, train_test, mode='fixed_slices', z_slices=z_slices)
-
-    # Prepare train data for all slices
-    # Only with labels
-    prepare_train_all_slices_w_labels = False
-    with_labels = False
-    idx_start = 0
-    idx_end = 21
-    train_test = 'train'
-    filepath_output = os.path.join(basepath, 'data', f'only_w_labels_bern_images_and_labels_from_101_to_121.hdf5')
-    if prepare_train_all_slices_w_labels:
-        prepare_and_write_data_bern(basepath, idx_start, idx_end, filepath_output, train_test, mode='all_slices', with_labels=with_labels)
-
-    # Prepare validation data for all slices
-    # Only with labels
-    prepare_validation_all_slices_w_labels = False
-    with_labels = True
-    idx_start = 22
-    idx_end = 27
-    train_test = 'validation'
-    filepath_output = os.path.join(basepath, 'data', f'only_w_labels_bern_images_and_labels_from_122_to_127.hdf5')
-    if prepare_validation_all_slices_w_labels:
-        prepare_and_write_data_bern(basepath, idx_start, idx_end, filepath_output, train_test, mode='all_slices', with_labels=with_labels)
-
-    # Prepare train data for all slices
-    prepare_train_all_slices = False
-    with_labels = False
-    idx_start = 0
-    idx_end = 21
-    train_test = 'train'
-    filepath_output = os.path.join(basepath, 'data', f'bern_images_and_labels_from_101_to_121.hdf5')
-    if prepare_train_all_slices:
-        prepare_and_write_data_bern(basepath, idx_start, idx_end, filepath_output, train_test, mode='all_slices', with_labels=with_labels)
-    
-    # Prepare validation data for all slices
-    prepare_validation_all_slices = False
-    with_labels = False
-    idx_start = 22
-    idx_end = 27
-    train_test = 'validation'
-    filepath_output = os.path.join(basepath, 'data', f'bern_images_and_labels_from_122_to_127.hdf5')
-    if prepare_validation_all_slices:
-        prepare_and_write_data_bern(basepath, idx_start, idx_end, filepath_output, train_test, mode='all_slices', with_labels=with_labels)
-"""
 
 
 

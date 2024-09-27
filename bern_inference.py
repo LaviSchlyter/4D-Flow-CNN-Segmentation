@@ -14,13 +14,10 @@ from experiments import exp_inference as exp_config
 def save_prediction(prediction, prediction_sized, output_path):
     #logging.info('========================== Saving prediction to: {} ========================== '.format(output_path))
     # Save prediction
-    #with h5py.File(output_path, 'w') as f:
-    #    f.create_dataset('data', data=prediction.cpu())
-    #np.save(output_path.replace('.h5', '.npy'), prediction_sized)
     np.save(output_path, prediction_sized)
     #logging.info('========================== Saved prediction to: {} ========================== '.format(output_path))
 
-def run_inference(training_output_path, inference_input_path, label_path, inference_output_path, final_model_output_file, patient_id):
+def run_inference(training_output_path, inference_input_path, label_path, inference_output_path, final_model_output_file, patient_id, CS = False):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info('========================== Running inference on device: {} ========================== '.format(device))
 
@@ -40,8 +37,10 @@ def run_inference(training_output_path, inference_input_path, label_path, infere
     model_path = os.path.join(training_output_path, exp_config.experiment_name)
     # Not very robust 
     if exp_config.use_validation:
+        # Take the best model from the validation
         best_model_path = os.path.join(model_path, list(filter(lambda x: 'best' in x, os.listdir(model_path)))[-1])
     else:
+        # Take the model with the most epochs
         best_model_path = os.path.join(model_path, os.listdir(model_path)[-1])
     if os.path.exists(best_model_path):
         logging.info('========================== Found best model from: {} ========================== '.format(best_model_path))
@@ -67,6 +66,10 @@ def run_inference(training_output_path, inference_input_path, label_path, infere
     image = utils.normalize_image(image)
     orig_volume_size = image.shape[0:4]
     # Crop or pad 
+
+    # If compressed sensing data then we crop the first 10 slices
+    if CS:
+        image = image[:,:,10:,...]
 
 
     if exp_config.slices == 'all':
@@ -136,7 +139,16 @@ def run_inference(training_output_path, inference_input_path, label_path, infere
     # Crop or pad to original size 
     prediction_sized = torch.unsqueeze(prediction, dim = -1)
     prediction_sized = prediction_sized.permute(4,1,2,0,3)
-    prediction_sized = utils.crop_or_pad_final_seg(prediction_sized.squeeze().cpu(), orig_volume_size)
+    prediction_sized = prediction_sized.squeeze().cpu()
+    # If compressed sensing data then we pad the first 10 slices before putting into the function
+    if CS:
+        
+        pad_width = [(0, 0)] * prediction_sized.ndim
+        pad_width[2] = (10, 0) # Pad the z axis
+        prediction_sized = np.pad(prediction_sized, pad_width, mode='constant', constant_values=0)
+
+
+    prediction_sized = utils.crop_or_pad_final_seg(prediction_sized, orig_volume_size)
     #prediction_sized = utils.crop_or_pad_4dvol(prediction_sized.cpu(), orig_volume_size)
     #prediction_sized = prediction_sized.squeeze()
     
@@ -170,40 +182,55 @@ def run_inference(training_output_path, inference_input_path, label_path, infere
 
 if __name__ == '__main__':
 
-    for class_label in exp_config.class_labels: # ['controls', 'patients', 'patients_compressed_sensing', 'controls_compressed_sensing']:
+    for experiment_name in exp_config.experiment_names:
 
-        if class_label.__contains__('compressed_sensing'):
-            CS = True
-            # Get the original class label
-            class_label_wo_cs = class_label.split('_')[0]
-    
-        basepath = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/preprocessed/{class_label_wo_cs}/numpy'
-        if CS:
-            basepath += "_compressed_sensing"
-        seg_basepath =f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/segmenter_rw_pw_hard/{class_label}'
-        training_patients_ids = [re.split(r'seg_|.npy', x)[1] for x in os.listdir(seg_basepath)]
-        patient_ids = os.listdir(basepath)
+        # Log info of the experiment as well as its number out of total
+        logging.info('========================== Running inference for experiment: {} ========================== '.format(experiment_name))
+        logging.info('========================== Experiment number: {} out of {} ========================== '.format(exp_config.experiment_names.index(experiment_name)+1, len(exp_config.experiment_names)))
+        exp_config.experiment_name = experiment_name
+        
 
+        for class_label in exp_config.class_labels: # ['controls', 'patients', 'patients_compressed_sensing', 'controls_compressed_sensing']:
+            
 
-        for patient_id in patient_ids:
-            patient_id = patient_id.split('.')[0]
-            if not exp_config.predict_on_training:
-                if training_patients_ids.__contains__(patient_id):
-                    # The patient is on the training data
-                    continue 
-            training_output_path = "/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/logdir/"
-            inference_input_path = f"{basepath}/{patient_id}.npy"
-            label_path = f"{seg_basepath}/{class_label}/seg_{patient_id}.npy"
-            inference_output_dir = f"/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/logdir/inference_results/{exp_config.experiment_name}/{class_label}"
-            final_model_output_dir =f"/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/cnn_segmentations/{exp_config.experiment_name}/{class_label}" 
+            class_label_wo_cs = class_label
+            CS = False
+            if class_label.__contains__('compressed_sensing'):
+                CS = True
+                # Get the original class label
+                class_label_wo_cs = class_label.split('_')[0]
+        
+            basepath = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/preprocessed/{class_label_wo_cs}/numpy'
+            if CS:
+                basepath += "_compressed_sensing"
+            seg_basepath =f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/segmenter_rw_pw_hard/{class_label}'
+            training_patients_ids = [re.split(r'seg_|.npy', x)[1] for x in os.listdir(seg_basepath)]
+            patient_ids = os.listdir(basepath)
 
 
-            final_model_output_file = None
-            if exp_config.use_final_output_dir:
-                utils.make_dir_safely(final_model_output_dir)
-                final_model_output_file = os.path.join(final_model_output_dir, f"seg_{patient_id}.npy")
-            make_dir_safely(inference_output_dir)
-            inference_output_path = os.path.join(inference_output_dir, f"seg_{patient_id}.npy")
+            for patient_id in patient_ids:
+                patient_id = patient_id.split('.')[0]
+                if not exp_config.predict_on_training:
+                    if training_patients_ids.__contains__(patient_id):
+                        # The patient is on the training data
+                        continue 
+                logging.info('Running inference for patient: {} '.format(patient_id))
+                training_output_path = "/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/logdir/"
+                inference_input_path = f"{basepath}/{patient_id}.npy"
+                label_path = f"{seg_basepath}/{class_label}/seg_{patient_id}.npy"
+                inference_output_dir = f"/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/logdir/inference_results/{exp_config.experiment_name}/{class_label}"
+                final_model_output_dir =f"/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/cnn_segmentations/{exp_config.experiment_name}/{class_label}" 
 
 
-            run_inference(training_output_path, inference_input_path, label_path, inference_output_path, final_model_output_file, patient_id)
+                final_model_output_file = None
+                if exp_config.use_final_output_dir:
+                    utils.make_dir_safely(final_model_output_dir)
+                    final_model_output_file = os.path.join(final_model_output_dir, f"seg_{patient_id}.npy")
+                make_dir_safely(inference_output_dir)
+                inference_output_path = os.path.join(inference_output_dir, f"seg_{patient_id}.npy")
+
+
+                run_inference(training_output_path, inference_input_path, label_path, inference_output_path, final_model_output_file, patient_id, CS = CS)
+            
+            logging.info('========================== Finished inference for class: {} ========================== '.format(class_label))
+    logging.info('========================== Finished inference for all classes ========================== ')

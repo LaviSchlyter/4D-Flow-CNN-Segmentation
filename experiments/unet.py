@@ -1,3 +1,4 @@
+# We use python as config, in order to allow for dynamic configurations 
 import model_zoo
 import torch
 import datetime
@@ -20,43 +21,55 @@ REPRODUCE = False
 SEED = 0
 
 use_adaptive_batch_norm = False  # If True, train_with_Bern should be False
-train_with_bern = False
+train_with_bern = True
 use_saved_model = False
-only_w_bern = False # You can choose if you want to only train with Bern or mix both
-with_validation = True
+only_w_bern = True # You can choose if you want to only train with Bern or mix both
+with_validation = False
 defrozen_conv_blocks = False
 
-# Data settings
+# ======================================================================
+# Data Configuration
+# ======================================================================
 data_mode = '3D'
 image_size = [144, 112, 48]  # [x, y, time]
 nlabels = 2  # [background, foreground]
-train_file_name = 'only_w_labels_bern_images_and_labels_from_01_to_45' # size_40_bern_images_and_labels_from_01_to_35, only_w_labels_bern_images_and_labels_from_101_to_121, size_40_bern_images_and_labels_from_101_to_121
-val_file_name = 'only_w_labels_bern_images_and_labels_from_36_to_45'
+
+train_file_name = 'size_40_bern_images_and_labels_from_01_to_48' #only_w_labels_bern_images_and_labels_from_01_to_48, size_40_bern_images_and_labels_from_01_to_36, size_40_bern_images_and_labels_from_01_to_48, only_w_labels_bern_images_and_labels_from_01_to_48
+val_file_name = 'size_40_bern_images_and_labels_from_37_to_48' # size_40_bern_images_and_labels_from_37_to_48, only_w_labels_bern_images_and_labels_from_37_to_48, size_40_bern_images_and_labels_from_37_to_48, only_w_labels_bern_images_and_labels_from_47_to_48
+
 add_pixels_weight = 100
 
 
-# Training settings
-cut_z = True  # If True, cut the first and last 3 slices of the z axis
-cut_z_saved = 3
-run_number = 1
-da_ratio = 0.25
-nchannels = 4  # [intensity, vx, vy, vz]
-epochs = 125
-batch_size = 8
-learning_rate = 1e-3
+# ======================================================================
+# Training Hyperparameters
+# ======================================================================
+cut_z = False  # If True, removes the first and last 3 z-slices
+cut_z_saved = 3  # Number of z-slices to cut
+run_number = 1  # Experiment run number
+da_ratio = 0.0  # Data augmentation ratio
+nchannels = 4  # Number of input channels (e.g., intensity, vx, vy, vz)
+epochs = 125  # Number of epochs for training
+batch_size = 8  # Training batch size
+learning_rate = 1e-3  # Initial learning rate
 
-optimizer_handle = torch.optim.AdamW
-betas = (0.9, 0.98)
-loss_type = 'dice' # 'dice' or 'crossentropy'
+# Optimizer settings
+optimizer_handle = torch.optim.AdamW  # Optimizer
+betas = (0.9, 0.98)  # Beta coefficients for AdamW
+loss_type = 'dice'  # Loss function ('dice' or 'crossentropy')
 
-summary_writing_frequency = 50
-train_eval_frequency = 200
-val_eval_frequency = 200
-save_frequency = 200
-continue_run = False
-augment_data = False
+# ======================================================================
+# Logging and Saving Frequency
+# ======================================================================
+summary_writing_frequency = 50  # How often to write summaries
+train_eval_frequency = 200  # How often to evaluate training performance
+val_eval_frequency = 200  # How often to evaluate validation performance
+save_frequency = 200  # How often to save the model
+continue_run = False  # Set to True to continue a previous run
+augment_data = False  # Enable or disable data augmentation
 
-# Timestamp and Experiment naming
+# ======================================================================
+# Experiment Naming
+# ======================================================================
 timestamp = datetime.datetime.now().strftime("%y%m%d-%H%M")
 da_tag = f'da_{da_ratio}'
 cutz_tag = '_cutz' if cut_z else ''
@@ -69,30 +82,28 @@ lr_tag = f'lr{learning_rate}'
 full_run_freiburg = '_full_run_freiburg' if not use_saved_model and not train_with_bern else ''
 adaptive_bn_tag = 'adBN' if use_adaptive_batch_norm else ''
 w_validation_tag = '_w_val' if with_validation else ''
-# If training with Bern, extract note from train_file_name
+
+# Build experiment name based on settings
+note = ''
 if train_with_bern:
-    if 'only_w_labels' in train_file_name:
-        note = '_tr_only_w_labels'
-    elif 'size_40' in train_file_name:
-        note = '_tr_size_40'
-else:
-    note = ''
+    note = '_tr_only_w_labels' if 'only_w_labels' in train_file_name else '_tr_size_40'
 if only_w_bern:
     note += '_only_w_bern'
-
 if use_saved_model:
     note += '_finetune'
 if not use_saved_model and train_with_bern and not only_w_bern:
     note += '_bern_and_freiburg'
-extra_info = ''
-experiment_name = f'{timestamp}_{da_tag}_{channel_tag}_{run_tag}_{loss_tag}{cutz_tag}_{epoch_tag}_{batch_tag}_{lr_tag}_{adaptive_bn_tag}{full_run_freiburg}{w_validation_tag}{note}{extra_info}'
 
-# unfortuneately, we need to hardcode the name of the saved model
+experiment_name = f'{timestamp}_{da_tag}_{channel_tag}_{run_tag}_{loss_tag}{cutz_tag}_{epoch_tag}_{batch_tag}_{lr_tag}_{adaptive_bn_tag}{full_run_freiburg}{w_validation_tag}{note}'
+
+
+# We need to hardcode the name of the saved model
 #experiment_name_saved_model = '231023-1021_da_0.0_nchan4_r1_loss_dice_e125_bs8_lr0.001__full_run_freiburg'  # Placeholder for saved model naming if needed
 #experiment_name_saved_model = '231023-1024_da_0.0_nchan4_r1_loss_dice_cutz_e125_bs8_lr0.001__full_run_freiburg'
 #experiment_name_saved_model = '231023-1025_da_0.0_nchan4_r1_loss_cross_entropy_e125_bs8_lr0.001__full_run_freiburg'
 #experiment_name_saved_model = '231023-1030_da_0.0_nchan4_r1_loss_crossentropy_e125_bs8_lr0.001__full_run_freiburg'
 #experiment_name_saved_model = '231023-1031_da_0.0_nchan4_r1_loss_crossentropy_cutz_e125_bs8_lr0.001__full_run_freiburg'
+#experiment_name_saved_model = '231109-1152_da_0.25_nchan4_r1_loss_dice_cutz_e125_bs8_lr0.001__full_run_freiburg_w_val'
 experiment_name_saved_model = '231023-1024_da_0.0_nchan4_r1_loss_dice_cutz_e125_bs8_lr0.001__full_run_freiburg'
 
 

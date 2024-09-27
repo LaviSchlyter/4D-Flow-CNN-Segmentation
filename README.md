@@ -49,7 +49,7 @@ Preprocess the data by running
   python data_freiburg_numpy_to_hdf5.py
 
 # For bern the data was within the data folder (not publiblicly available) converted to numpy similarly to the Freiburg converted
-# Go into the Bern_numpy_to_hdf5_for_training.ipynb notebook and depending on what type of training you want run different cells . 
+# Run bern_numpy_to_hdf5_for_training.py
 ```
 
 Train the network
@@ -66,7 +66,7 @@ The data does not have test data but inference runs the best saved model on the 
 ```bash
   # In the `expriments` folder set the various parameters needed in `exp_inference.py`
   # Run the bash file which launches the `bern_inference.py` onto the cluster if available
-  sbatch vern_inference.sh
+  sbatch bern_inference.sh
 ```
 
 Visualize 3D segmentation \
