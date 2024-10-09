@@ -327,7 +327,7 @@ def create_center_lines(path, cnn_predictions = True, patient_type = 'controls',
     if cnn_predictions:
         exp_path = os.path.join('/',*path.split('/')[:-1])
     else:
-        exp_path = os.path.join('/',*path.split('/')[:-2],'hand_segmented_centerlines')
+        exp_path = os.path.join('/',*path.split('/')[:-2],'segmentations/hand_segmented_centerlines')
     for folder in [centerline_folder, interpolation_folder, full_aorta_folder]:
         make_dir_safely(os.path.join(exp_path, folder))
 
@@ -485,7 +485,7 @@ def create_center_lines(path, cnn_predictions = True, patient_type = 'controls',
 def save_all_in_one(model_path, hand_seg = False, suffix = ''):
 
     if hand_seg:
-        save_images_path = os.path.join('/',*model_path.split('/')[:-2],'hand_segmented_centerlines') + f'/SubjectCenterlines{suffix}/'
+        save_images_path = os.path.join('/',*model_path.split('/')[:-2],'segmentations/hand_segmented_centerlines') + f'/SubjectCenterlines{suffix}/'
     else:
         save_images_path = os.path.join('/',*model_path.split('/')[:-1])+ f'/SubjectCenterlines{suffix}/'
     final_seg_path
@@ -878,7 +878,7 @@ def save_images_cropped_sliced(model_path,patient_type = 'controls', full_aorta 
         size = 20
         aorta = '_full_aorta'
     if hand_seg:
-        exp_path = os.path.join('/',*model_path.split('/')[:-2], 'hand_segmented_centerlines')
+        exp_path = os.path.join('/',*model_path.split('/')[:-2], 'segmentations/hand_segmented_centerlines')
     else:
         exp_path = os.path.join('/',*model_path.split('/')[:-1])
     make_dir_safely(exp_path + f'/cropped_sliced{aorta+suffix}')
@@ -912,7 +912,7 @@ def save_images_cropped_sliced_masked(model_path,patient_type = 'controls', full
         aorta = '_full_aorta'
     
     if hand_seg:
-        exp_path = os.path.join('/',*model_path.split('/')[:-2], 'hand_segmented_centerlines')
+        exp_path = os.path.join('/',*model_path.split('/')[:-2], 'segmentations/hand_segmented_centerlines')
     else:
         exp_path = os.path.join('/',*model_path.split('/')[:-1])
     
@@ -990,7 +990,7 @@ for patient_type in class_labels:
     logging.info(f'Running patient type {patient_type+suffix}')
 
     # Final segmentations
-    final_seg_path = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/final_segmentations/{patient_type+suffix}'
+    final_seg_path = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/segmentations/final_segmentations/{patient_type+suffix}'
 
     all_seg_paths = [os.path.join(final_seg_path, f) for f in os.listdir(final_seg_path)]
     
@@ -1003,7 +1003,7 @@ for patient_type in class_labels:
     img_path = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/preprocessed/{patient_type}/numpy{suffix}'
 
     # Hand seg paths 
-    hand_seg_path = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/segmenter_rw_pw_hard/{patient_type+suffix}'
+    hand_seg_path = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/segmentations/segmenter_rw_pw_hard/{patient_type+suffix}'
 
     logging.info(f'img path: {img_path}')
 
@@ -1067,7 +1067,7 @@ for patient_type in class_labels:
     #save_all_in_one(model_path=model_path, hand_seg= False, suffix = suffix)
     #save_all_in_one(model_path=hand_seg_path, hand_seg= True, suffix = suffix)
     exp_path = os.path.join('/',*all_seg_paths[0].split('/')[:-1])
-    #hand_path = os.path.join('/',*hand_seg_path.split('/')[:-2],'hand_segmented_centerlines')
+    #hand_path = os.path.join('/',*hand_seg_path.split('/')[:-2],'segmentations/hand_segmented_centerlines')
     filepath_output = exp_path + f'/{patient_type+suffix}_masked_sliced_images.hdf5'
 
     if not os.path.exists(filepath_output):

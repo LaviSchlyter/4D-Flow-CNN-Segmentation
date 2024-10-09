@@ -203,7 +203,7 @@ if __name__ == '__main__':
             basepath = f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/preprocessed/{class_label_wo_cs}/numpy'
             if CS:
                 basepath += "_compressed_sensing"
-            seg_basepath =f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/segmenter_rw_pw_hard/{class_label}'
+            seg_basepath =f'/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady/segmentations/segmenter_rw_pw_hard/{class_label}'
             training_patients_ids = [re.split(r'seg_|.npy', x)[1] for x in os.listdir(seg_basepath)]
             patient_ids = os.listdir(basepath)
 

@@ -22,6 +22,7 @@ project_data_bern_root = "/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/
 # The original dicom files are not here and they are not required for any further processing.
 # Just for completeness, the bast path for the original dicom files of the freiburg dataset are here:
 orig_data_root = '/usr/bmicnas02/data-biwi-01/nkarani_data/hpc_predict/data/freiburg/126_subjects'
+project_data_root = '/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady'
 
 # ==================================================================
 # log root

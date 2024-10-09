@@ -61,8 +61,8 @@ def prepare_and_write_data_bern(idx_start, idx_end, filepath_output, train_test,
     common_image_shape = [144, 112, z_slices if mode == 'fixed_slices' else None, 48, 4]
     common_label_shape = [144, 112, z_slices if mode == 'fixed_slices' else None, 48]
     basepath_jerem = '/usr/bmicnas02/data-biwi-01/jeremy_students'
-    hand_seg_path_controls = basepath_jerem + '/data/inselspital/kady/segmenter_rw_pw_hard/controls'
-    hand_seg_path_patients = basepath_jerem + '/data/inselspital/kady/segmenter_rw_pw_hard/patients'
+    hand_seg_path_controls = basepath_jerem + '/data/inselspital/kady/segmentations/segmenter_rw_pw_hard/controls'
+    hand_seg_path_patients = basepath_jerem + '/data/inselspital/kady/segmentations/segmenter_rw_pw_hard/patients'
     list_hand_seg_images = os.listdir(hand_seg_path_controls) + os.listdir(hand_seg_path_patients) + os.listdir(hand_seg_path_patients + '_compressed_sensing') + os.listdir(hand_seg_path_controls+'_compressed_sensing')
     list_hand_seg_images.sort()
 
@@ -72,7 +72,7 @@ def prepare_and_write_data_bern(idx_start, idx_end, filepath_output, train_test,
     
 
 
-    #seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmenter_rw_pw_hard', 'controls')
+    #seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmentations/segmenter_rw_pw_hard', 'controls')
     #img_path = os.path.join(basepath_jerem, 'data/inselspital/kady/preprocessed', 'controls', 'numpy')
     patients = list_hand_seg_images[idx_start:idx_end]
     # Sort the list
@@ -112,17 +112,17 @@ def prepare_and_write_data_bern(idx_start, idx_end, filepath_output, train_test,
         CS = False
 
         if os.listdir(hand_seg_path_controls).__contains__(patient):
-            seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmenter_rw_pw_hard', 'controls')
+            seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmentations/segmenter_rw_pw_hard', 'controls')
             img_path = os.path.join(basepath_jerem, 'data/inselspital/kady/preprocessed', 'controls', 'numpy')
         elif os.listdir(hand_seg_path_patients).__contains__(patient):
-            seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmenter_rw_pw_hard', 'patients')
+            seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmentations/segmenter_rw_pw_hard', 'patients')
             img_path = os.path.join(basepath_jerem, 'data/inselspital/kady/preprocessed', 'patients', 'numpy')
         elif os.listdir(hand_seg_path_controls+'_compressed_sensing').__contains__(patient):
-            seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmenter_rw_pw_hard', 'controls_compressed_sensing')
+            seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmentations/segmenter_rw_pw_hard', 'controls_compressed_sensing')
             img_path = os.path.join(basepath_jerem, 'data/inselspital/kady/preprocessed', 'controls', 'numpy_compressed_sensing')
             CS = True
         elif os.listdir(hand_seg_path_patients + '_compressed_sensing').__contains__(patient):
-            seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmenter_rw_pw_hard', 'patients_compressed_sensing')
+            seg_path = os.path.join(basepath_jerem, 'data/inselspital/kady/segmentations/segmenter_rw_pw_hard', 'patients_compressed_sensing')
             img_path = os.path.join(basepath_jerem, 'data/inselspital/kady/preprocessed', 'patients', 'numpy_compressed_sensing')
             CS = True
         
