@@ -1,0 +1,81 @@
+# ===================================
+# Model settings
+# ===================================
+
+model_handle: UNet
+REPRODUCE: True
+SEED: 0
+use_wandb: True
+
+
+# We have several ways of training the segmentation network:
+# 1. Training a model only with the Freiburg data (use_saved_model = False and train_with_bern = False)
+# 2. Training with Bern data from scratch without Freiburg (use_saved_model = False, train_with_bern = True, only_w_bern = True)
+# 3. Finetuning with batch normalization for Bern data with saved model (use_saved_model = True, use_adaptive_batch_norm = True)
+# 4. Traininig with Bern and Freiburg data (use_saved_model = False, train_with_bern = True, only_w_bern = False)
+# 5. Finetune with Bern but with all layers (use_saved_model = True, train_with_bern = True)
+
+use_adaptive_batch_norm: False
+train_with_bern: True
+use_saved_model: False
+only_w_bern: True
+with_validation: False
+defrozen_conv_blocks: False
+
+# ===================================
+# Data settings
+# ===================================
+data_mode: '3D'
+image_size: [144, 112, 48] # [x,y,time]
+nlabels: 2 # [background, foreground]
+
+train_file_name: 'size_40_bern_images_and_labels_from_01_to_48'
+val_file_name: 'size_40_bern_images_and_labels_from_37_to_48'
+
+add_pixels_weight: 100
+
+
+# ===================================
+# Training settings
+# ===================================
+epochs: 5 
+batch_size: 8 
+learning_rate: 1e-3
+nchannels: 4 # Number of input channels (e.g., intensity, vx, vy, vz)
+
+cut_z: False # If True, removes the first and last 3 z-slices
+cut_z_saved: 3 
+
+
+#Optimizer
+optimizer_handle: AdamW
+betas: [0.9, 0.98]
+loss_type: 'dice' # 'dice' or 'cross_entropy' 
+
+# Scheduler settings
+scheduler:
+  use_scheduler: False  
+  type: 'CyclicLR'  # Example: StepLR, ExponentialLR, CyclicLR
+  step_size: 10  # Specific to StepLR, ignored by CyclicLR
+  gamma: 0.1  # Used in StepLR and ExponentialLR
+  base_lr: 1e-4  # Used in CyclicLR, minimum LR boundary
+  max_lr: 1e-2  # Used in CyclicLR, maximum LR boundary
+  mode: 'triangular'  # CyclicLR mode: 'triangular', 'triangular2', 'exp_range'
+  cycle_momentum: False  # Specific to CyclicLR if using Adam
+
+#Run
+da_ratio: 0.0 # Data augmentation ratio
+continue_run: False
+augment_data: False
+
+# ===================================
+# Logging and Saving Frequency
+# ===================================
+summary_writing_frequency: 50 # Frequency of writing summary
+train_eval_frequency: 200 # Frequency of evaluating on training data
+val_eval_frequency: 200 # Frequency of evaluating on validation data
+save_frequency: 200 # Frequency of saving the model
+
+# ===================================
+# If use_saved_model is True, we need to specify the experiment_name_saved_model
+experiment_name_saved_model: '231023-1024_da_0.0_nchan4_r1_loss_dice_cutz_e125_bs8_lr0.001__full_run_freiburg'

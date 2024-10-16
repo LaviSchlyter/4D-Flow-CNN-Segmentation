@@ -27,4 +27,5 @@ project_data_root = '/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspita
 # ==================================================================
 # log root
 # ==================================================================
-log_root = os.path.join(project_code_root, 'logdir/')
+log_root = os.path.join(project_code_root, 'logs/')
+log_experiments_root = os.path.join(project_code_root, 'Saved_models/')
