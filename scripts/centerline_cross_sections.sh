@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH  --output=../logs/visualization_logs/%j.out
+#SBATCH  --output=../logs/centerline_cross_sections_logs/%j.out
 #SBATCH  --gres=gpu:1
 #SBATCH  --mem=50G
 
@@ -9,8 +9,10 @@ source /scratch_net/biwidl203/lschlyter/anaconda3/etc/profile.d/conda.sh
 conda activate seg
 
 if [ "$USE_CONFIG" = "True" ]; then
-    python -u segmentation_visualization.py --config_path "$CONFIG_PATH"
+    python -u ../src/inference/cnn_seg_cross_sectional_slices.py --config_path "$CONFIG_PATH"
 else
-    python -u segmentation_visualization.py "$@"
+    python -u ../src/inference/cnn_seg_cross_sectional_slices.py "$@"
+
 fi
 
+echo "Centerline cross sections visualization script finished"
