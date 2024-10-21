@@ -12,6 +12,17 @@ from helpers import utils
 from helpers.losses import compute_dice
 import re
 from models import model_zoo
+import random
+
+def set_seed(seed=42):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 
 # import experiment settings
 #from experiments import exp_inference as exp_config
@@ -177,6 +188,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     with open(args.config_path, 'r') as file:
         config = yaml.safe_load(file)
+
+    set_seed(config["inference_seed"])
 
     experiment_names_path = utils.gather_experiment_paths(config['models_dir'], config['filters']['specific_times'])
     experiment_names = [os.path.basename(exp) for exp in experiment_names_path]
