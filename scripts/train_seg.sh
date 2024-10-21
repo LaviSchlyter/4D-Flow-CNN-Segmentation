@@ -14,7 +14,7 @@ LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${SLURM_JOB_ID}.out"
 mkdir -p $LOG_DIR
 
 source /scratch_net/biwidl203/lschlyter/anaconda3/etc/profile.d/conda.sh
-conda activate seg_net
+conda activate segmentation_pipeline
 
 # Redirect stdout and stderr to your dynamically generated log file
 exec > >(tee -i $LOG_FILE)

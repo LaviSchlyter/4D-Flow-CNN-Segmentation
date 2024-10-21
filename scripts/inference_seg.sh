@@ -5,10 +5,10 @@
 
 CONFIG_PATH="/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/config/config_inference.yaml"
 VISUALIZE_3D_SEG="False" # True does not work on the cluster yet
-VISUALIZE_CENTERLINE_POSTPROCESSING="False" 
+VISUALIZE_CENTERLINE_POSTPROCESSING="True" 
 VISUALIZE_CENTERLINE_CROSS_SECTION="True"
 source /scratch_net/biwidl203/lschlyter/anaconda3/etc/profile.d/conda.sh
-conda activate seg
+conda activate segmentation_pipeline
 
 # Main inference script to run
 #python -u ../src/inference/bern_inference.py --config_path "$CONFIG_PATH"

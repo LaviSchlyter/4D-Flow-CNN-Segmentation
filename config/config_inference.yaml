@@ -6,6 +6,7 @@ nchannels: 4
 predict_on_training: False
 model_handle: UNet  # You can specify this as a string
 slices: '40'  # Options: 'all' or '40'
+inference_seed: 42
 
 filters:
   specific_times:
