@@ -1,0 +1,18 @@
+# Inference settings
+use_validation: False
+class_labels: ['controls', 'patients', 'patients_compressed_sensing', 'controls_compressed_sensing']
+use_final_output_dir: False
+nchannels: 4
+predict_on_training: False
+model_handle: UNet  # You can specify this as a string
+slices: '40'  # Options: 'all' or '40'
+
+filters:
+  specific_times:
+  - "231116-1134"
+
+
+
+project_code_root: '/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation'
+models_dir: '/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/Saved_models'
+project_data_root: '/usr/bmicnas02/data-biwi-01/jeremy_students/data/inselspital/kady'
