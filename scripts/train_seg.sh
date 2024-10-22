@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH  --gres=gpu:1
-#SBATCH  --mem=40G
+#SBATCH  --mem=80G
 
 # --> Configure before running
 CONFIG_PATH="/usr/bmicnas02/data-biwi-01/jeremy_students/lschlyter/CNN-segmentation/config/config_train.yaml"

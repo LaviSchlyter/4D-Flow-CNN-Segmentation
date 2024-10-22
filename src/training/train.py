@@ -2,6 +2,7 @@
 import logging
 import os.path
 import yaml
+import gc
 import numpy as np
 import torch
 import sys
@@ -16,7 +17,7 @@ import h5py
 from pytorch_model_summary import summary
 from helpers.utils import make_dir_safely, generate_experiment_name, checkpoint, iterate_minibatches, setup_scheduler, cut_z_slices, save_results_visualization
 from models import model_zoo
-
+from sklearn.model_selection import KFold, train_test_split
 
 def evaluate_losses(labels_pred,
                     labels,
@@ -146,8 +147,8 @@ def train_model(model: torch.nn.Module,
     :param model: model to be trained
     :param images_tr: training images
     :param labels_tr: training labels
-    :param images_val: validation images
-    :param labels_val: validation labels
+    :param images_val: validation images or None
+    :param labels_val: validation labels or None
     :param device: device to run the model
     :param optimizer: optimizer
     :param exp_dir: experiment directory
@@ -238,7 +239,7 @@ def train_model(model: torch.nn.Module,
                 checkpoint(model, save_path)
 
             # Evaluate on the validation set
-            if config["with_validation"]:
+            if config["with_validation"] or config["cross_validation"]:
                 if (step) % config["val_eval_frequency"] == 0:
                     logging.info('Validation data evaluation:')
                     make_dir_safely(exp_dir + '/results/')
@@ -309,9 +310,220 @@ if __name__ == '__main__':
             "Invalid configuration: 'use_adaptive_batch_norm' cannot be True while 'train_with_bern' is True. "
             "Set 'train_with_bern' to False or 'use_adaptive_batch_norm' to False."
         )
-    
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info("Using device: {}".format(device))
+    # We have several ways of training the segmentation network:
+    # 1. Training a model only with the Freiburg data (use_saved_model = False and train_with_bern = False)
+    # 2. Training with Bern data from scratch without Freiburg (use_saved_model = False, train_with_bern = True, only_w_bern = True)
+    # 3. Finetuning with batch normalization for Bern data with saved model (use_saved_model = True, use_adaptive_batch_norm = True)
+    # 4. Traininig with Bern and Freiburg data (False = True, train_with_bern = True, only_w_bern = False)
+    # 5. Finetune with Bern but with all layers (use_saved_model = True, train_with_bern = True)
+
+    if not config["use_saved_model"] and not config["train_with_bern"]:
+        # Load the data
+        logging.info('============================================================')
+        logging.info('Loading training data from: ' + sys_config.project_data_freiburg_root)    
+        data_tr = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
+                                                        idx_start = 0,
+                                                        idx_end = 19,
+                                                        train_test='train')
+        images_tr = data_tr['images_train']
+        labels_tr = data_tr['labels_train']
+            
+        logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
+        logging.info('Shape of training labels: %s' %str(labels_tr.shape))
+
+        logging.info('============================================================')
+        logging.info('Loading validation data from: ' + sys_config.project_data_freiburg_root)
+        data_vl = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
+                                                        idx_start = 20,
+                                                        idx_end = 24,
+                                                        train_test='validation')
+        images_vl = data_vl['images_validation']
+        labels_vl = data_vl['labels_validation']
+
+        logging.info('Shape of validation images: %s' %str(images_vl.shape))
+        logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
+        logging.info('============================================================')
+
+        if config["cut_z"]:
+            # Values are either 0 or 3 and this function works for the Freiburg dataset
+            # We remove parts of the images in the z direction
+            logging.info('============================================================')
+            logging.info('Cutting the images in the z direction...')
+            logging.info('============================================================')
+            images_tr, labels_tr = cut_z_slices(images_tr, labels_tr, freiburg = True)
+            images_vl, labels_vl = cut_z_slices(images_vl, labels_vl, freiburg = True)
+            logging.info('============================================================')
+            logging.info('Dimensions after cutting...')
+            logging.info('============================================================')
+            logging.info('Shape of training images: %s' %str(images_tr.shape))
+            logging.info('Shape of training labels: %s' %str(labels_tr.shape))
+            logging.info('Shape of validation images: %s' %str(images_vl.shape))
+            logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
+    
+    if ((not config["use_saved_model"]) and (config["train_with_bern"]) and (config["only_w_bern"])):
+        # Training with Bern data from scratch without Freiburg
+        logging.info('============================================================')
+        logging.info('Training with Bern data from scratch without Freiburg')
+        data_tr = h5py.File(sys_config.project_data_bern_root + f'/{config["train_file_name"]}.hdf5','r')
+        data_vl = h5py.File(sys_config.project_data_bern_root + f'/{config["val_file_name"]}.hdf5','r')
+        images_tr = data_tr['images_train'][:]
+        labels_tr = data_tr['labels_train'][:]
+        images_vl = data_vl['images_validation'][:]
+        labels_vl = data_vl['labels_validation'][:]
+        logging.info('Shape of training images: %s' %str(images_tr.shape))
+        logging.info('Shape of training labels: %s' %str(labels_tr.shape))
+        logging.info('Shape of validation images: %s' %str(images_vl.shape))
+        logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
+
+    
+    # Load the saved models if that's what we use
+    if config["use_saved_model"]:
+        logging.info('============================================================')
+        logging.info('Loading model from: ' + config["experiment_name_saved_model"])
+        model_path = os.path.join(sys_config.log_root, config["experiment_name_saved_model"])
+        best_model_path = os.path.join(model_path, list(filter(lambda x: 'best' in x, os.listdir(model_path)))[-1])
+        model.load_state_dict(torch.load(best_model_path, map_location=device))
+
+    # Use finetuning with batch normalization for Bern data
+    if config["use_adaptive_batch_norm"] and config["use_saved_model"]:
+        logging.info("Using adaptive batch norm")
+
+        # If the layer is a batch norm then we want to keep it trainable but the others not
+        #TODO: Improve this 16.10.2024
+        if not config["defrozen_conv_blocks"]:
+            for name, param in model.named_parameters():
+                if 'bn' not in name:
+                    param.requires_grad = False
+        else:
+            logging.info("Defreezing conv blocks")
+            for name, param in model.named_parameters():
+                if ('bn' not in name) and ('upconv' in name) ^ ('conv3' in name) ^ ('conv4' in name) ^ ('conv5' in name) ^ ('conv6' in name):
+                    param.requires_grad = False
+
+        logging.info("Loading Bern data... ")
+        data_tr = h5py.File(sys_config.project_data_bern_root + f'/{config["train_file_name"]}.hdf5','r')
+        data_vl = h5py.File(sys_config.project_data_bern_root + f'/{config["val_file_name"]}.hdf5','r')
+        images_tr = data_tr['images_train'][:]
+        labels_tr = data_tr['labels_train'][:]
+        images_vl = data_vl['images_validation'][:]
+        labels_vl = data_vl['labels_validation'][:]
+        logging.info('Shape of Bern training images: %s' %str(images_tr.shape))
+        logging.info('Shape of Bern training labels: %s' %str(labels_tr.shape))
+        logging.info('Shape of Bern validation images: %s' %str(images_vl.shape))
+        logging.info('Shape of Bern validation labels: %s' %str(labels_vl.shape))
+
+        if config["cut_z"]:
+            logging.info('============================================================')
+            logging.info('Cutting the images in the z direction...')
+            logging.info('============================================================')
+            keep_indices_tr = np.where(data_tr['alias'][:] ==0)[0]
+            keep_indices_vl = np.where(data_vl['alias'][:] ==0)[0]
+            images_tr = images_tr[keep_indices_tr]
+            labels_tr = labels_tr[keep_indices_tr]
+            images_vl = images_vl[keep_indices_vl]
+            labels_vl = labels_vl[keep_indices_vl]
+            logging.info('============================================================')
+            logging.info('Dimensions after cutting...')
+            logging.info('============================================================')
+            logging.info('Shape of Bern training images: %s' %str(images_tr.shape))
+            logging.info('Shape of Bern training labels: %s' %str(labels_tr.shape))
+            logging.info('Shape of Bern validation images: %s' %str(images_vl.shape))
+            logging.info('Shape of Bern validation labels: %s' %str(labels_vl.shape))
+
+    # Here we train with Bern data and Freiburg data
+    if ((config["train_with_bern"]) and (not config["use_saved_model"]) and (not config["only_w_bern"])):
+        logging.info("Loading Bern data... and appending to the Freiburg data...")
+        bern_tr = h5py.File(sys_config.project_data_bern_root + f'/{config["train_file_name"]}.hdf5','r')
+        bern_vl = h5py.File(sys_config.project_data_bern_root + f'/{config["val_file_name"]}.hdf5','r')
+        data_tr = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
+                                                        idx_start = 0,
+                                                        idx_end = 19,
+                                                        train_test='train')
+        images_tr = data_tr['images_train']
+        labels_tr = data_tr['labels_train']
+        data_vl = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
+                                                        idx_start = 20,
+                                                        idx_end = 24,
+                                                        train_test='validation')
+        images_vl = data_vl['images_validation']
+        labels_vl = data_vl['labels_validation']
+        bern_images_tr = bern_tr['images_train']
+        bern_labels_tr = bern_tr['labels_train']
+        bern_images_vl = bern_vl['images_validation']
+        bern_labels_vl = bern_vl['labels_validation']
+        logging.info('Shape of Bern training images: %s' %str(bern_images_tr.shape))
+        logging.info('Shape of Bern training labels: %s' %str(bern_labels_tr.shape))
+        logging.info('Shape of Bern validation images: %s' %str(bern_images_vl.shape))
+        logging.info('Shape of Bern validation labels: %s' %str(bern_labels_vl.shape))
+
+        if config["cut_z"]:
+            logging.info('============================================================')
+            logging.info('Cutting the images in the z direction...')
+            logging.info('============================================================')
+            keep_indices_tr = np.where(bern_tr['alias'][:] ==0)[0]
+            keep_indices_vl = np.where(bern_vl['alias'][:] ==0)[0]
+            bern_images_tr = bern_images_tr[keep_indices_tr]
+            bern_labels_tr = bern_labels_tr[keep_indices_tr]
+            bern_images_vl = bern_images_vl[keep_indices_vl]
+            bern_labels_vl = bern_labels_vl[keep_indices_vl]
+            logging.info('============================================================')
+            logging.info('Dimensions after cutting...')
+            logging.info('============================================================')
+            logging.info('Shape of Bern training images: %s' %str(bern_images_tr.shape))
+            logging.info('Shape of Bern training labels: %s' %str(bern_labels_tr.shape))
+            logging.info('Shape of Bern validation images: %s' %str(bern_images_vl.shape))
+            logging.info('Shape of Bern validation labels: %s' %str(bern_labels_vl.shape))
+
+        images_tr = np.concatenate([images_tr[:],bern_images_tr[:]], axis=0)
+        labels_tr = np.concatenate([labels_tr[:],bern_labels_tr[:]], axis=0)
+        images_vl = np.concatenate([images_vl[:],bern_images_vl[:]], axis=0)
+        labels_vl = np.concatenate([labels_vl[:],bern_labels_vl[:]], axis=0)
+        logging.info("Done loading Bern data...")
+
+    if ((config["use_saved_model"]) and (config["train_with_bern"])):
+        # Here we finetune the model with Bern data using all the layers
+        logging.info("Loading Bern data... ")
+        logging.info("Finetuning the model with Bern data...")
+        data_tr = h5py.File(sys_config.project_data_bern_root + f'/{config["train_file_name"]}.hdf5','r')
+        data_vl = h5py.File(sys_config.project_data_bern_root + f'/{config["val_file_name"]}.hdf5','r')
+        images_tr = data_tr['images_train'][:]
+        labels_tr = data_tr['labels_train'][:]
+        images_vl = data_vl['images_validation'][:]
+        labels_vl = data_vl['labels_validation'][:]
+
+        if config["cut_z"]:
+            logging.info('============================================================')
+            logging.info('Cutting the images in the z direction...')
+            logging.info('============================================================')
+            keep_indices_tr = np.where(data_tr['alias'][:] ==0)[0]
+            keep_indices_vl = np.where(data_vl['alias'][:] ==0)[0]
+            images_tr = images_tr[keep_indices_tr]
+            labels_tr = labels_tr[keep_indices_tr]
+            images_vl = images_vl[keep_indices_vl]
+            labels_vl = labels_vl[keep_indices_vl]
+            logging.info('============================================================')
+            logging.info('Shapes after cutting...')
+            logging.info('============================================================')
+
+    if config["nchannels"] == 1:
+        logging.info('============================================================')
+        logging.info('Only the phase x images (channel 1) will be used for the segmentation...')
+        logging.info('============================================================')
+
+    logging.info('Shape of FINAL training images: %s' %str(images_tr.shape))
+    logging.info('Shape of FINAL training labels: %s' %str(labels_tr.shape))
+    logging.info('Shape of FINAL validation images: %s' %str(images_vl.shape))
+    logging.info('Shape of FINAL validation labels: %s' %str(labels_vl.shape))
+    model_summary = summary(model_mapping[config["model_handle"]](config["nchannels"], config["nlabels"]).to(device), torch.zeros(size = (config["batch_size"],config["nchannels"], 144,112,48) ).to(device))
+
+    config["images_tr_shape"] = images_tr.shape
+    config["labels_tr_shape"] = labels_tr.shape
+    config["images_vl_shape"] = images_vl.shape
+    config["labels_vl_shape"] = labels_vl.shape
+    
 
     if config["use_wandb"]:
         wandb_mode = "online"
@@ -324,235 +536,148 @@ if __name__ == '__main__':
                   , f'defrozen_conv_blocks_{config["defrozen_conv_blocks"]}', f'only_w_bern_{config["only_w_bern"]}', f'{config["val_file_name"]}',
                   f'reproduce_{config["REPRODUCE"]}', f'seed_{config["SEED"]}', f'{config["AAslurm_job_id"]}']
     
-    
     experiment_name = generate_experiment_name(config)
-    config['experiment_name'] = experiment_name
 
-
-    with wandb.init(mode= wandb_mode,project="3D_segmentation_aorta", name = experiment_name, notes = "segmentation", tags =wandb_tags):
-        # Create the model
-        model = model_mapping[config["model_handle"]](in_channels=config["nchannels"], out_channels=config["nlabels"])
-        model.to(device)
-        
-        # We have several ways of training the segmentation network:
-        # 1. Training a model only with the Freiburg data (use_saved_model = False and train_with_bern = False)
-        # 2. Training with Bern data from scratch without Freiburg (use_saved_model = False, train_with_bern = True, only_w_bern = True)
-        # 3. Finetuning with batch normalization for Bern data with saved model (use_saved_model = True, use_adaptive_batch_norm = True)
-        # 4. Traininig with Bern and Freiburg data (False = True, train_with_bern = True, only_w_bern = False)
-        # 5. Finetune with Bern but with all layers (use_saved_model = True, train_with_bern = True)
-        
-        if not config["use_saved_model"] and not config["train_with_bern"]:
-            # Load the data
-            logging.info('============================================================')
-            logging.info('Loading training data from: ' + sys_config.project_data_freiburg_root)    
-            data_tr = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
-                                                            idx_start = 0,
-                                                            idx_end = 19,
-                                                            train_test='train')
-            images_tr = data_tr['images_train']
-            labels_tr = data_tr['labels_train']
-                
-            logging.info('Shape of training images: %s' %str(images_tr.shape)) # expected: [img_size_z*num_images, img_size_x, vol_size_y, img_size_t, n_channels]
-            logging.info('Shape of training labels: %s' %str(labels_tr.shape))
-
-            logging.info('============================================================')
-            logging.info('Loading validation data from: ' + sys_config.project_data_freiburg_root)
-            data_vl = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
-                                                            idx_start = 20,
-                                                            idx_end = 24,
-                                                            train_test='validation')
-            images_vl = data_vl['images_validation']
-            labels_vl = data_vl['labels_validation']
-
-            logging.info('Shape of validation images: %s' %str(images_vl.shape))
-            logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-            logging.info('============================================================')
-
-            if config["cut_z"]:
-                # Values are either 0 or 3 and this function works for the Freiburg dataset
-                # We remove parts of the images in the z direction
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                images_tr, labels_tr = cut_z_slices(images_tr, labels_tr, freiburg = True)
-                images_vl, labels_vl = cut_z_slices(images_vl, labels_vl, freiburg = True)
-                logging.info('============================================================')
-                logging.info('Dimensions after cutting...')
-                logging.info('============================================================')
-                logging.info('Shape of training images: %s' %str(images_tr.shape))
-                logging.info('Shape of training labels: %s' %str(labels_tr.shape))
-                logging.info('Shape of validation images: %s' %str(images_vl.shape))
-                logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-        
-        if ((not config["use_saved_model"]) and (config["train_with_bern"]) and (config["only_w_bern"])):
-            # Training with Bern data from scratch without Freiburg
-            logging.info('============================================================')
-            logging.info('Training with Bern data from scratch without Freiburg')
-            data_tr = h5py.File(sys_config.project_data_bern_root + f'/{config["train_file_name"]}.hdf5','r')
-            data_vl = h5py.File(sys_config.project_data_bern_root + f'/{config["val_file_name"]}.hdf5','r')
-            images_tr = data_tr['images_train'][:]
-            labels_tr = data_tr['labels_train'][:]
-            images_vl = data_vl['images_validation'][:]
-            labels_vl = data_vl['labels_validation'][:]
-            logging.info('Shape of training images: %s' %str(images_tr.shape))
-            logging.info('Shape of training labels: %s' %str(labels_tr.shape))
-            logging.info('Shape of validation images: %s' %str(images_vl.shape))
-            logging.info('Shape of validation labels: %s' %str(labels_vl.shape))
-
-        
-        # Load the saved models if that's what we use
-        if config["use_saved_model"]:
-            logging.info('============================================================')
-            logging.info('Loading model from: ' + config["experiment_name_saved_model"])
-            model_path = os.path.join(sys_config.log_root, config["experiment_name_saved_model"])
-            best_model_path = os.path.join(model_path, list(filter(lambda x: 'best' in x, os.listdir(model_path)))[-1])
-            model.load_state_dict(torch.load(best_model_path, map_location=device))
-
-        # Use finetuning with batch normalization for Bern data
-        if config["use_adaptive_batch_norm"] and config["use_saved_model"]:
-            logging.info("Using adaptive batch norm")
-
-            # If the layer is a batch norm then we want to keep it trainable but the others not
-            #TODO: Improve this 16.10.2024
-            if not config["defrozen_conv_blocks"]:
-                for name, param in model.named_parameters():
-                    if 'bn' not in name:
-                        param.requires_grad = False
-            else:
-                logging.info("Defreezing conv blocks")
-                for name, param in model.named_parameters():
-                    if ('bn' not in name) and ('upconv' in name) ^ ('conv3' in name) ^ ('conv4' in name) ^ ('conv5' in name) ^ ('conv6' in name):
-                        param.requires_grad = False
-
-            logging.info("Loading Bern data... ")
-            data_tr = h5py.File(sys_config.project_data_bern_root + f'/{config["train_file_name"]}.hdf5','r')
-            data_vl = h5py.File(sys_config.project_data_bern_root + f'/{config["val_file_name"]}.hdf5','r')
-            images_tr = data_tr['images_train'][:]
-            labels_tr = data_tr['labels_train'][:]
-            images_vl = data_vl['images_validation'][:]
-            labels_vl = data_vl['labels_validation'][:]
-            logging.info('Shape of Bern training images: %s' %str(images_tr.shape))
-            logging.info('Shape of Bern training labels: %s' %str(labels_tr.shape))
-            logging.info('Shape of Bern validation images: %s' %str(images_vl.shape))
-            logging.info('Shape of Bern validation labels: %s' %str(labels_vl.shape))
-
-            if config["cut_z"]:
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                keep_indices_tr = np.where(data_tr['alias'][:] ==0)[0]
-                keep_indices_vl = np.where(data_vl['alias'][:] ==0)[0]
-                images_tr = images_tr[keep_indices_tr]
-                labels_tr = labels_tr[keep_indices_tr]
-                images_vl = images_vl[keep_indices_vl]
-                labels_vl = labels_vl[keep_indices_vl]
-                logging.info('============================================================')
-                logging.info('Dimensions after cutting...')
-                logging.info('============================================================')
-                logging.info('Shape of Bern training images: %s' %str(images_tr.shape))
-                logging.info('Shape of Bern training labels: %s' %str(labels_tr.shape))
-                logging.info('Shape of Bern validation images: %s' %str(images_vl.shape))
-                logging.info('Shape of Bern validation labels: %s' %str(labels_vl.shape))
-
-        # Here we train with Bern data and Freiburg data
-        if ((config["train_with_bern"]) and (not config["use_saved_model"]) and (not config["only_w_bern"])):
-            logging.info("Loading Bern data... and appending to the Freiburg data...")
-            bern_tr = h5py.File(sys_config.project_data_bern_root + f'/{config["train_file_name"]}.hdf5','r')
-            bern_vl = h5py.File(sys_config.project_data_bern_root + f'/{config["val_file_name"]}.hdf5','r')
-            data_tr = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
-                                                            idx_start = 0,
-                                                            idx_end = 19,
-                                                            train_test='train')
-            images_tr = data_tr['images_train']
-            labels_tr = data_tr['labels_train']
-            data_vl = data_freiburg_numpy_to_hdf5.load_data(basepath = sys_config.project_data_freiburg_root,
-                                                            idx_start = 20,
-                                                            idx_end = 24,
-                                                            train_test='validation')
-            images_vl = data_vl['images_validation']
-            labels_vl = data_vl['labels_validation']
-            bern_images_tr = bern_tr['images_train']
-            bern_labels_tr = bern_tr['labels_train']
-            bern_images_vl = bern_vl['images_validation']
-            bern_labels_vl = bern_vl['labels_validation']
-            logging.info('Shape of Bern training images: %s' %str(bern_images_tr.shape))
-            logging.info('Shape of Bern training labels: %s' %str(bern_labels_tr.shape))
-            logging.info('Shape of Bern validation images: %s' %str(bern_images_vl.shape))
-            logging.info('Shape of Bern validation labels: %s' %str(bern_labels_vl.shape))
-
-            if config["cut_z"]:
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                keep_indices_tr = np.where(bern_tr['alias'][:] ==0)[0]
-                keep_indices_vl = np.where(bern_vl['alias'][:] ==0)[0]
-                bern_images_tr = bern_images_tr[keep_indices_tr]
-                bern_labels_tr = bern_labels_tr[keep_indices_tr]
-                bern_images_vl = bern_images_vl[keep_indices_vl]
-                bern_labels_vl = bern_labels_vl[keep_indices_vl]
-                logging.info('============================================================')
-                logging.info('Dimensions after cutting...')
-                logging.info('============================================================')
-                logging.info('Shape of Bern training images: %s' %str(bern_images_tr.shape))
-                logging.info('Shape of Bern training labels: %s' %str(bern_labels_tr.shape))
-                logging.info('Shape of Bern validation images: %s' %str(bern_images_vl.shape))
-                logging.info('Shape of Bern validation labels: %s' %str(bern_labels_vl.shape))
-
-            images_tr = np.concatenate([images_tr[:],bern_images_tr[:]], axis=0)
-            labels_tr = np.concatenate([labels_tr[:],bern_labels_tr[:]], axis=0)
-            images_vl = np.concatenate([images_vl[:],bern_images_vl[:]], axis=0)
-            labels_vl = np.concatenate([labels_vl[:],bern_labels_vl[:]], axis=0)
-            logging.info("Done loading Bern data...")
-
-        if ((config["use_saved_model"]) and (config["train_with_bern"])):
-            # Here we finetune the model with Bern data using all the layers
-            logging.info("Loading Bern data... ")
-            logging.info("Finetuning the model with Bern data...")
-            data_tr = h5py.File(sys_config.project_data_bern_root + f'/{config["train_file_name"]}.hdf5','r')
-            data_vl = h5py.File(sys_config.project_data_bern_root + f'/{config["val_file_name"]}.hdf5','r')
-            images_tr = data_tr['images_train'][:]
-            labels_tr = data_tr['labels_train'][:]
-            images_vl = data_vl['images_validation'][:]
-            labels_vl = data_vl['labels_validation'][:]
-
-            if config["cut_z"]:
-                logging.info('============================================================')
-                logging.info('Cutting the images in the z direction...')
-                logging.info('============================================================')
-                keep_indices_tr = np.where(data_tr['alias'][:] ==0)[0]
-                keep_indices_vl = np.where(data_vl['alias'][:] ==0)[0]
-                images_tr = images_tr[keep_indices_tr]
-                labels_tr = labels_tr[keep_indices_tr]
-                images_vl = images_vl[keep_indices_vl]
-                labels_vl = labels_vl[keep_indices_vl]
-                logging.info('============================================================')
-                logging.info('Shapes after cutting...')
-                logging.info('============================================================')
-
-        if config["nchannels"] == 1:
-            logging.info('============================================================')
-            logging.info('Only the phase x images (channel 1) will be used for the segmentation...')
-            logging.info('============================================================')
-
+    
+    
+    if config["with_validation"]:
+        config['experiment_name'] = experiment_name
         # Create the experiment directory
         exp_dir = os.path.join(sys_config.log_experiments_root, experiment_name)
         make_dir_safely(exp_dir)
 
-        # Create the optimizer
-        # It is created after the model as some layers may be set to require_grad False
-        if config["optimizer_handle"] == 'Adam':
-            optimizer = torch.optim.Adam(model.parameters(), lr=float(config["learning_rate"]))
-        elif config["optimizer_handle"] == 'AdamW':
-            optimizer = torch.optim.AdamW(model.parameters(), lr=float(config["learning_rate"]), betas=config["betas"])
-        else:
-            raise ValueError("Invalid optimizer handle, select either Adam or AdamW")
+        with wandb.init(mode= wandb_mode,project="3D_segmentation_aorta", name = experiment_name, notes = "segmentation", tags =wandb_tags):
+            logging.info("Model summary: \n{}".format(model_summary))
+            wandb.config.update(config)
+            # Create the model
+            if config["use_saved_model"]:
+                # Model already loaded
+                pass
+            else:
+                model = model_mapping[config["model_handle"]](in_channels=config["nchannels"], out_channels=config["nlabels"])
+                model.to(device)
+
+            # Create the optimizer
+            # It is created after the model as some layers may be set to require_grad False
+            if config["optimizer_handle"] == 'Adam':
+                optimizer = torch.optim.Adam(model.parameters(), lr=float(config["learning_rate"]))
+            elif config["optimizer_handle"] == 'AdamW':
+                optimizer = torch.optim.AdamW(model.parameters(), lr=float(config["learning_rate"]), betas=config["betas"])
+            else:
+                raise ValueError("Invalid optimizer handle, select either Adam or AdamW")
         
-        wandb.config.update({"experiment_name": experiment_name, "with_validation": config["with_validation"],"data_augmentation": config["da_ratio"], "batch_size": config["batch_size"], "learning_rate": config["learning_rate"], "optimizer": config["optimizer_handle"], "betas_if_adamW":config["betas"], "model": config["model_handle"], "nchannels": config["nchannels"], "nlabels": config["nlabels"],
-                                    "epochs": config["epochs"], "loss": config["loss_type"], "z_cut":config["cut_z"], "use_bern_data":config["train_with_bern"], "defrozen_conv_blocks": config["defrozen_conv_blocks"], "adaptive_batch_norm": config["use_adaptive_batch_norm"], "pixel_pad_weight": config["add_pixels_weight"]})
+            train_model(model, images_tr, labels_tr, images_vl, labels_vl, device, optimizer, exp_dir, config)
+
+    elif config["cross_validation"]:
+        logging.info("========= Cross validation =========")
+        kfold = KFold(n_splits = config['k_folds'], shuffle = True, random_state = config['SEED'])
+        fold_results = []
+        del images_vl, labels_vl
+        gc.collect()
         
-        logging.info('Shape of FINAL training images: %s' %str(images_tr.shape))
-        logging.info('Shape of FINAL training labels: %s' %str(labels_tr.shape))
-        logging.info('Shape of FINAL validation images: %s' %str(images_vl.shape))
-        logging.info('Shape of FINAL validation labels: %s' %str(labels_vl.shape))
-        print(summary(model_mapping[config["model_handle"]](config["nchannels"], config["nlabels"]).to(device), torch.zeros(size = (config["batch_size"],config["nchannels"], 144,112,48) ).to(device)))
-        train_model(model, images_tr, labels_tr, images_vl, labels_vl, device, optimizer, exp_dir, config)
+        
+
+        for fold, (train_index, test_index) in enumerate(kfold.split(images_tr)):
+            logging.info(f"Training fold {fold+1}/{config['k_folds']} ...")
+            
+            fold_experiment_name = experiment_name + f"_fold_{fold}"
+            config['experiment_name'] = fold_experiment_name
+            # Create the experiment directory
+            fold_dir = os.path.join(sys_config.log_experiments_root, fold_experiment_name)
+            make_dir_safely(fold_dir)
+
+            # Save the indices
+            np.save(fold_dir + "/train_indices.npy", train_index)
+            np.save(fold_dir + "/test_indices.npy", test_index)
+
+            model = model_mapping[config["model_handle"]](in_channels=config["nchannels"], out_channels=config["nlabels"])
+            model.to(device)
+            logging.info("Loaded model")
+
+            if config["optimizer_handle"] == 'Adam':
+                optimizer = torch.optim.Adam(model.parameters(), lr=float(config["learning_rate"]))
+            elif config["optimizer_handle"] == 'AdamW':
+                optimizer = torch.optim.AdamW(model.parameters(), lr=float(config["learning_rate"]), betas=config["betas"])
+            else:
+                raise ValueError("Invalid optimizer handle, select either Adam or AdamW")
+
+            train_images, val_images, train_labels, val_labels = train_test_split(np.take(images_tr, train_index, axis=0), np.take(labels_tr, train_index, axis=0), test_size = 0.1, random_state = config["SEED"])
+            test_images, test_labels = images_tr[test_index], labels_tr[test_index]
+
+            # log wandb
+            with wandb.init(mode= wandb_mode,project="3D_segmentation_aorta", name = fold_experiment_name, notes = "segmentation", tags =wandb_tags):
+                wandb.config.update({**config, "fold": fold, "train_size": len(train_images), "val_size": len(val_images), "test_size": len(test_images), "train_indices": train_index, "val_indices": test_index})
+                logging.info("Starting training for fold %d" % fold)
+                train_model(model, train_images, train_labels, val_images, val_labels, device, optimizer, fold_dir, config)
+
+                # Evaluate the model on the test set using best validation model
+                best_model_path = os.path.join(fold_dir, list(filter(lambda x: 'best' in x, os.listdir(fold_dir)))[-1])
+                model.load_state_dict(torch.load(best_model_path, map_location=device))
+                
+                test_loss, test_dice = do_eval(model, config, test_images, test_labels, device, training_data = False)
+                fold_results.append((test_loss, test_dice))
+                logging.info("Fold %d test loss: %0.04f, test dice: %0.04f" % (fold, test_loss, test_dice))
+                wandb.log({"Fold test loss": test_loss, "Fold test dice": test_dice})
+   
+                del model
+                del optimizer
+                del train_images
+                del train_labels
+                del val_images
+                del val_labels
+                gc.collect()
+                torch.cuda.empty_cache()
+                wandb.finish()
+        logging.info("Cross validation results:")
+        # Fold results need to be numpy array and not tensor on cuda
+        
+        fold_results = [(tloss.cpu() if tloss.is_cuda else tloss, 
+                    tdice.cpu() if tdice.is_cuda else tdice) for tloss, tdice in fold_results]
+
+        avg_loss = np.mean([x[0] for x in fold_results])
+        std_loss = np.std([x[0] for x in fold_results])
+        avg_dice = np.mean([x[1] for x in fold_results])
+        std_dice = np.std([x[1] for x in fold_results])
+        logging.info(f"Cross-validation results: Average Loss: {avg_loss:.4f}, Std Loss: {std_loss:.4f}, Average Dice: {avg_dice:.4f}, Std Dice: {std_dice:.4f}")
+
+
+
+        with wandb.init(mode=wandb_mode, project="3D_segmentation_aorta", name=f"{experiment_name}_cross_validation_summary", notes="cross-validation summary"):
+            wandb.log({"Average loss": avg_loss, "Std loss": std_loss, "Average dice": avg_dice, "Std dice": std_dice})
+            logging.info("Model summary: \n{}".format(model_summary))
+
+
+    else:
+        logging.info("========= Training without validation =========")
+        config['experiment_name'] = experiment_name
+        # Create the experiment directory
+        exp_dir = os.path.join(sys_config.log_experiments_root, experiment_name)
+        make_dir_safely(exp_dir)
+
+        with wandb.init(mode= wandb_mode,project="3D_segmentation_aorta", name = experiment_name, notes = "segmentation", tags =wandb_tags):
+            wandb.config.update(config)
+            logging.info("Model summary: \n{}".format(model_summary))
+            if config["use_saved_model"]:
+                # Model already loaded
+                pass
+            else:
+                model = model_mapping[config["model_handle"]](in_channels=config["nchannels"], out_channels=config["nlabels"]).to(device)
+
+            if config["optimizer_handle"] == 'Adam':
+                optimizer = torch.optim.Adam(model.parameters(), lr=float(config["learning_rate"]))
+            elif config["optimizer_handle"] == 'AdamW':
+                optimizer = torch.optim.AdamW(model.parameters(), lr=float(config["learning_rate"]), betas=config["betas"])
+            else:
+                raise ValueError("Invalid optimizer handle, select either Adam or AdamW")
+            
+            train_model(model, images_tr, labels_tr, None, None, device, optimizer, exp_dir, config)
+
+            
+
+
+
+                                    
+            
+
+
+
